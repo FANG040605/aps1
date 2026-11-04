@@ -10,7 +10,7 @@
 """
 
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import config
 
@@ -68,7 +68,17 @@ def _dedupe(ids):
 # ---------------- 日期 ----------------
 
 def parse_date(value):
-    """解析日期：2026/11/3、2026-11-03、2026.11.4、11月12日、datetime。"""
+    """解析日期：2026/11/3、2026-11-03、2026.11.4、11月12日、Excel 日期。
+
+    一律返回 date，绝不返回 datetime。
+    原因（客户真实踩过，整条链路直接崩）：datetime 是 date 的子类，
+    台账被 Excel 另存一次后，接单日期会从文字变成真日期（datetime），
+    于是一批订单里混着 date 和 datetime，`max()` 一比较就
+    TypeError: '>' not supported between instances of 'datetime.datetime' and 'datetime.date'
+    ——客户只是拿 Excel 打开存了一下，什么也没改，工具就说排产失败。
+    """
+    if isinstance(value, datetime):
+        return value.date()
     if isinstance(value, date):
         return value
     s = _txt(value).replace(" ", "")

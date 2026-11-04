@@ -12,6 +12,7 @@ import os
 import shutil
 import threading
 import time
+import traceback
 import urllib.request
 import uuid
 import webbrowser
@@ -64,6 +65,7 @@ class Handler(BaseHTTPRequestHandler):
         except (_Bad, WorkbookError) as e:
             self._json({"detail": str(e)}, 400)
         except Exception as e:                      # 兜底：绝不把堆栈丢给前端
+            traceback.print_exc()                   # 但黑窗口里要留全，方便顾问定位
             self.log_error("排产失败 %r", e)
             self._json({"detail": f"排产时出错：{type(e).__name__}。请把台账发给我们核对。"}, 500)
 

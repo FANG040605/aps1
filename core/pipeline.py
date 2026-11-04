@@ -16,10 +16,21 @@ KINDS = {"schedule": ("排单表.xlsx", "schedule"), "gantt": ("甘特图.html",
 
 
 def default_start(orders):
-    """起始日默认取最近周一：今天和最早接单日里更晚的那个。"""
-    recv = [o["recv"] for o in orders if o["recv"]]
+    """起始日默认取最近周一：今天和最早接单日里更晚的那个。
+
+    _as_date 是道保险：哪怕上游哪天又漏了个 datetime 进来，
+    也不会因为 date 和 datetime 混着比而整条链路崩掉。
+    """
+    recv = [_as_date(o["recv"]) for o in orders if o["recv"]]
     base = max([date.today()] + recv) if recv else date.today()
     return cal.next_monday(base)
+
+
+def _as_date(value):
+    """datetime → date；本来就是 date 就原样返回；None 保持 None。"""
+    if isinstance(value, datetime):
+        return value.date()
+    return value
 
 
 def build_params(start_dt, allow_switch, machines):
