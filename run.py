@@ -12,7 +12,11 @@ import time as clock
 from datetime import datetime
 
 import config
-from core import checker, pipeline
+from preflight import ensure_deps
+
+ensure_deps()  # 缺 openpyxl 时给中文提示，不甩堆栈
+
+from core import checker, pipeline  # noqa: E402
 
 
 def _parse_start(text):

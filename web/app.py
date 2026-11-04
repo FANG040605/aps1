@@ -22,6 +22,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from preflight import ensure_deps  # noqa: E402
+
+ensure_deps()  # 缺 openpyxl 时给中文提示，不甩堆栈
+
 from core import pipeline  # noqa: E402
 from core.reader import WorkbookError  # noqa: E402
 

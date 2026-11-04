@@ -22,15 +22,28 @@
 
 | 项 | 版本 | 检查命令 |
 |---|---|---|
-| Python | 3.10+（本项目在 3.13.14 开发验证） | `python --version` |
+| Python | 3.10+（已在 3.13.14 与 3.12.0 上实测通过） | `python --version` |
 | openpyxl | 3.1.5 | `python -c "import openpyxl; print(openpyxl.__version__)"` |
 | Git | 2.x（仅开发需要，运行不需要） | `git --version` |
 
 装依赖（只需这一个第三方库）：
 
 ```bash
-pip install openpyxl
+python -m pip install openpyxl
 ```
+
+> **装完还是报 `No module named 'openpyxl'`？**
+> 说明 `pip` 和 `python` 不是同一个解释器（电脑上装了几套 Python 时很常见）。
+> 用带完整路径的写法再装一次，一定对得上：
+>
+> ```bash
+> python -c "import sys; print(sys.executable)"          # 先看运行用的是哪个
+> "C:\完整\路径\python.exe" -m pip install openpyxl      # 就往这个里装
+> ```
+>
+> 现在程序启动时也会先自检：缺库会直接给出上面这条带路径的命令（退出码 3），
+> 不再抛一屏英文堆栈。
+
 
 ### 命令行跑一次（后端）
 
@@ -73,6 +86,7 @@ aps-scheduler/
 ├── README.md              本文件：做什么、怎么跑、目录
 ├── .gitignore             排除缓存 / 产物 / 客户数据（红线）
 ├── config.py              长期参数：班次、日历、交期口径、工时单位
+├── preflight.py           启动自检：缺 openpyxl 时给中文提示（不甩堆栈）
 ├── run.py                 命令行入口（N4）
 ├── core/                  后端模块，一个文件一件事
 │   ├── reader.py          读三个 sheet（跳过标题行与注释行）
