@@ -57,8 +57,8 @@ python web/app.py --port 8765
 python -m unittest discover -s tests -v
 ```
 
-> 说明：`run.py`、`web/app.py` 分别在 N4、N5 节点落地。当前提交是骨架，
-> 命令先写在这里，保证接手的人知道最终怎么用。
+> 说明：`run.py` 已可用（N4 完成）；`web/app.py` 在 N5 落地。
+> 产物目录 `out/` 已加入 .gitignore——里面是客户数据的衍生结果，不进版本库。
 
 ## 三、目录说明
 
