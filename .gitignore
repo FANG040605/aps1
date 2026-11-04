@@ -1,0 +1,24 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- 虚拟环境 ----
+.venv/
+venv/
+
+# ---- 程序产物 ----
+out/
+
+# ---- 客户数据：绝不进版本库（红线）----
+data/
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
