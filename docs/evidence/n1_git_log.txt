@@ -1,25 +1,25 @@
-# N1 验证证据（可截图：直接截这个终端输出）
+# N1 验证证据
 
-生成时间：2026-11-04 14:15:51
+生成时间：2026-11-04 14:15:57
 
 ## 1) git log --oneline
+* 0276d5c docs: 记录 N1 Git 环境验证证据
 * 1524e08 feat: 补充交期文字口径与设备可用性判定规则
 * f9dac6d feat: 新增 config.py 集中管理班次与日历参数
 * 3e5c80f docs: 补全 README 运行方式与目录说明
 * fd77cc5 feat: 初始化项目骨架与 .gitignore
 
 ## 2) 分支
-* dev  1524e08 feat: 补充交期文字口径与设备可用性判定规则
+* dev  0276d5c docs: 记录 N1 Git 环境验证证据
   main 1524e08 feat: 补充交期文字口径与设备可用性判定规则
 
-## 3) git status（应为空）
-?? docs/evidence/
-(空)
+## 3) git status（排除本证据文件自身）
+(空 → 工作区干净)
 
 ## 4) 客户数据是否进库（应为空）
 (空 → 未进库)
 
-## 5) .gitignore 关键 5 项
+## 5) .gitignore 关键项
 2:__pycache__/
 3:*.pyc
 7:.venv/
