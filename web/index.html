@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>宏达精密 · 排产助手</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#f1f5f9; --card:#fff; --line:#e2e8f0; --ink:#0f172a; --sub:#64748b;
+    --brand:#2563eb; --brand-soft:#eff6ff; --danger:#dc2626; --danger-soft:#fef2f2;
+    --ok:#16a34a; --warn:#d97706; --warn-soft:#fffbeb;
+  }
+  body{background:var(--bg);color:var(--ink);font:14px/1.6 "Microsoft YaHei","Segoe UI",sans-serif}
+  .topbar{height:58px;background:var(--card);border-bottom:1px solid var(--line);
+          display:flex;align-items:center;justify-content:space-between;padding:0 32px}
+  .brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700}
+  .dot{width:10px;height:10px;border-radius:3px;background:var(--brand)}
+  .brand small{font-weight:400;color:var(--sub);font-size:13px;margin-left:6px}
+  .pill{border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:var(--sub);font-size:13px}
+  .wrap{padding:24px 32px 40px;max-width:1500px;margin:0 auto}
+  .card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;
+        padding:20px 22px;margin-bottom:16px}
+  .tag{position:absolute;left:-11px;top:-11px;width:24px;height:24px;border-radius:50%;
+       background:var(--brand);color:#fff;font-size:13px;font-weight:700;display:flex;
+       align-items:center;justify-content:center;box-shadow:0 0 0 3px var(--bg)}
+  h2{font-size:15px;margin-bottom:2px}
+  h2 em{font-style:normal;color:var(--sub);font-weight:400;font-size:13px;margin-left:8px}
+  /* 上传 */
+  .drop{margin-top:14px;border:2px dashed #cbd5e1;border-radius:12px;background:#f8fafc;
+        height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:6px;cursor:pointer;transition:.15s}
+  .drop:hover,.drop.over{border-color:var(--brand);background:var(--brand-soft)}
+  .drop .ico{width:38px;height:38px;border-radius:10px;background:var(--brand-soft);color:var(--brand);
+             display:flex;align-items:center;justify-content:center;font-size:19px}
+  .drop b{font-size:15px}
+  .drop span{color:var(--sub);font-size:13px}
+  .chosen{display:none;align-items:center;gap:10px;background:#f8fafc;border:1px solid var(--line);
+          border-radius:8px;padding:10px 14px;font-size:13px;margin-top:12px}
+  .chosen.on{display:flex}
+  .fmt{background:#dcfce7;color:#15803d;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:700}
+  .chosen .ok{color:var(--ok);margin-left:auto}
+  /* 参数 */
+  .params{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px;margin-top:16px}
+  label.t{display:block;font-size:13px;color:var(--sub);margin-bottom:8px}
+  .ctl{height:42px;border:1px solid var(--line);border-radius:8px;padding:0 12px;display:flex;
+       align-items:center;justify-content:space-between;background:#fff}
+  input[type=date]{border:0;font:inherit;color:inherit;background:transparent;width:100%}
+  .switch{width:46px;height:26px;border-radius:999px;background:var(--brand);position:relative;cursor:pointer}
+  .switch.off{background:#cbd5e1}
+  .switch::after{content:"";position:absolute;right:3px;top:3px;width:20px;height:20px;
+                 background:#fff;border-radius:50%;transition:.15s}
+  .switch.off::after{right:23px}
+  .radios{display:flex;gap:16px;align-items:center;height:42px;font-size:13px}
+  .radios i{width:15px;height:15px;border-radius:50%;border:1px solid #94a3b8;display:inline-block;
+            margin-right:5px;vertical-align:-2px}
+  .radios .on i{border:4px solid var(--brand)}
+  .radios .dis{color:#94a3b8}
+  .hint{color:var(--sub);font-size:12px;margin-top:6px}
+  /* 按钮 */
+  .actions{display:flex;align-items:center;gap:14px;margin-top:4px}
+  .btn{height:46px;padding:0 30px;border:0;border-radius:8px;background:var(--brand);color:#fff;
+       font:600 15px/1 inherit;font-family:inherit;display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+  .btn:disabled{background:#e2e8f0;color:#94a3b8;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--sub);border:1px solid var(--line);font-weight:400;font-size:14px}
+  .btn.loading{background:#93b4f5}
+  .spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;
+        border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .note{color:var(--sub);font-size:13px}
+  /* 提示条 */
+  .alert{display:none;border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px}
+  .alert.on{display:flex;gap:10px;align-items:flex-start}
+  .alert.err{background:var(--danger-soft);border:1px solid #fecaca;color:#991b1b}
+  .alert b{display:block;margin-bottom:2px}
+  /* 参数行 */
+  .param-line{background:var(--brand-soft);border:1px solid #dbeafe;border-radius:8px;padding:10px 14px;
+              font:12px/1.7 Consolas,"Microsoft YaHei",monospace;color:#1e3a8a;word-break:break-all}
+  /* 指标卡 */
+  .metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-top:14px}
+  .m{border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .m .k{color:var(--sub);font-size:12.5px}
+  .m .v{font-size:25px;font-weight:700;letter-spacing:-.5px;margin-top:4px;font-variant-numeric:tabular-nums}
+  .m .u{font-size:13px;font-weight:400;color:var(--sub);margin-left:4px}
+  .m .s{font-size:12px;color:#94a3b8}
+  .m.ok .v{color:var(--ok)} .m.bad .v{color:var(--danger)} .m.warn .v{color:var(--warn)}
+  /* 页签 */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:16px 0 4px;flex-wrap:wrap}
+  .tabs div{padding:9px 16px;font-size:14px;color:var(--sub);border-bottom:2px solid transparent;cursor:pointer}
+  .tabs .on{color:var(--brand);font-weight:600;border-bottom-color:var(--brand)}
+  .tabs .dl{margin-left:auto;color:var(--brand);font-size:13px;text-decoration:none;padding:9px 6px}
+  .dl a{color:var(--brand);text-decoration:none;border-bottom:1px dashed #bfdbfe;margin-left:10px}
+  /* 表格 */
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+  th{background:#f8fafc;color:var(--sub);font-weight:600;text-align:left;padding:10px 12px;
+     border-bottom:1px solid var(--line);font-size:12.5px;white-space:nowrap}
+  td{padding:10px 12px;border-bottom:1px solid #f1f5f9;white-space:nowrap;font-variant-numeric:tabular-nums}
+  tbody tr:nth-child(even){background:#fcfdff}
+  .mono{font-family:Consolas,monospace;font-size:12.5px}
+  .mc{display:inline-block;background:var(--brand-soft);color:#1d4ed8;border-radius:5px;padding:2px 8px;
+      font:600 12px Consolas,monospace}
+  .num{text-align:right}
+  tr.late td{background:var(--danger-soft)}
+  tr.late td:first-child{box-shadow:inset 3px 0 0 var(--danger)}
+  .gap{color:var(--danger);font-weight:700}
+  .dim{color:#94a3b8}
+  /* 甘特 */
+  .gantt{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:12px;overflow-x:auto}
+  .g-axis{position:relative;height:18px;margin-left:110px}
+  .g-axis span{position:absolute;font-size:10px;color:#94a3b8;white-space:nowrap}
+  .g-row{display:flex;align-items:center;height:38px;border-top:1px solid #f1f5f9}
+  .g-name{width:110px;flex:none;font:600 12px "Microsoft YaHei"}
+  .g-name em{color:#94a3b8;font-style:normal;font-weight:400;margin-left:5px}
+  .g-track{position:relative;flex:1;height:38px}
+  .g-tick{position:absolute;top:0;bottom:0;border-left:1px dashed #eef2f7}
+  .g-bar{position:absolute;top:9px;height:20px;border-radius:4px;opacity:.94;color:#fff;
+         font-size:10px;line-height:20px;padding-left:5px;overflow:hidden;white-space:nowrap}
+  .g-bar:hover{opacity:1;outline:2px solid #0f172a}
+  /* 体检 */
+  .cat{margin-top:16px}
+  .cat h3{font-size:13.5px;margin-bottom:2px}
+  .cat h3 em{font-style:normal;color:#b45309;font-weight:400;font-size:12px;margin-left:6px}
+  .foot{color:#94a3b8;font-size:12px;margin-top:18px;display:flex;justify-content:space-between}
+  #results{display:none}
+  #empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
+         gap:6px;height:150px;border:1px solid var(--line);border-radius:12px;background:#f8fafc;
+         color:var(--sub);font-size:13px;margin-bottom:16px}
+  #empty b{color:var(--ink);font-size:14px}
+  .ghost2{display:none}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span class="dot"></span>宏达精密 · 排产助手<small>本地版 v1.0</small></div>
+  <div class="pill">离线运行 · 数据不出本机</div>
+</div>
+
+<div class="wrap">
+  <div class="alert err" id="err"><span>✕</span><div><b id="errTitle">出错了</b><span id="errMsg"></span></div></div>
+
+  <!-- ① 上传 -->
+  <div class="card">
+    <div class="tag">1</div>
+    <h2>上传订单台账 <em>一个 .xlsx 文件，含「订单 / 设备 / 工艺路线」三个 sheet</em></h2>
+    <div class="drop" id="drop">
+      <div class="ico">↑</div>
+      <b>把台账拖到这里，或点击选择文件</b>
+      <span>仅支持 .xlsx，单文件 ≤ 12 MB</span>
+    </div>
+    <input type="file" id="file" accept=".xlsx,.xlsm" style="display:none">
+    <div class="chosen" id="chosen">
+      <span class="fmt">XLSX</span><span class="file" id="fname"></span>
+      <span class="dim" id="fsize"></span><span class="ok">✓ 已选好，可以排产</span>
+    </div>
+  </div>
+
+  <!-- ② 参数 -->
+  <div class="card">
+    <div class="tag">2</div>
+    <h2>排产参数 <em>三个参数都会写进结果里的「本次参数」行</em></h2>
+    <div class="params">
+      <div>
+        <label class="t">起始日（留空取最近周一）</label>
+        <div class="ctl"><input type="date" id="start"></div>
+        <div class="hint">默认 2026-11-09（周一）</div>
+      </div>
+      <div>
+        <label class="t">是否允许同组替换机台</label>
+        <div class="ctl"><span id="swLabel">允许</span><span class="switch" id="sw"></span></div>
+        <div class="hint">关掉则只排工艺点名的机台</div>
+      </div>
+      <div>
+        <label class="t">数量空白怎么处理</label>
+        <div class="radios"><span class="on"><i></i>不排产（标待确认）</span><span class="dis"><i></i>按一半（P1 未实现）</span></div>
+        <div class="hint">推荐不排产，避免替客户承诺交期</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ 生成 -->
+  <div class="card">
+    <div class="tag">3</div>
+    <h2>开始排产</h2>
+    <div class="actions">
+      <button class="btn" id="go" disabled>▶ 开始排产</button>
+      <button class="btn ghost" id="reset">恢复默认</button>
+      <span class="note" id="statusNote">先选台账，按钮才会亮</span>
+    </div>
+  </div>
+
+  <!-- ④ 参数行 -->
+  <div class="card">
+    <div class="tag">4</div>
+    <h2>本次参数 <em>自动生成，随结果一起打印</em></h2>
+    <div class="param-line" id="params">等待生成…</div>
+  </div>
+
+  <!-- 空态 -->
+  <div id="empty">
+    <b>还没有排产结果</b>
+    <span>上传台账后点「开始排产」，结果会出现在这里</span>
+  </div>
+
+  <!-- 结果 -->
+  <div id="results">
+    <div class="card">
+      <div class="tag">5</div>
+      <h2>排产结果总览 <em>六张卡，一眼看出能不能按期、有没有撞机</em></h2>
+      <div class="metrics" id="metrics"></div>
+      <div class="tabs" id="tabs">
+        <div class="on" data-p="schedule">排单表</div>
+        <div data-p="gantt">甘特图</div>
+        <div data-p="risk">风险清单</div>
+        <div data-p="checkup">体检报告</div>
+        <span class="dl" id="downloads"></span>
+      </div>
+      <div id="panel-schedule"></div>
+      <div id="panel-gantt" style="display:none"></div>
+      <div id="panel-risk" style="display:none"></div>
+      <div id="panel-checkup" style="display:none"></div>
+    </div>
+  </div>
+
+  <div class="foot"><span>宏达精密 · 本地排产助手</span><span id="elapsed"></span></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = {file: null, data: null};
+const PALETTE = ["#2563eb","#0d9488","#7c3aed","#db2777","#ea580c","#0891b2","#65a30d"];
+
+/* ---------- 上传 ---------- */
+function pick(f){
+  if(!f) return;
+  if(!/\.(xlsx|xlsm)$/i.test(f.name)){
+    showError("这个文件打不开，不是 Excel 台账",
+      `当前文件：${f.name}。请上传 .xlsx 文件，且要包含「订单」「设备」「工艺路线」三个工作表。`);
+    return;
+  }
+  state.file = f;
+  $("#fname").textContent = f.name;
+  $("#fsize").textContent = (f.size/1024).toFixed(0) + " KB";
+  $("#chosen").classList.add("on");
+  $("#go").disabled = false;
+  $("#statusNote").textContent = "准备好了，点「开始排产」";
+  clearError();
+}
+$("#drop").addEventListener("click", () => $("#file").click());
+$("#file").addEventListener("change", e => pick(e.target.files[0]));
+["dragenter","dragover"].forEach(k => $("#drop").addEventListener(k, e => {
+  e.preventDefault(); $("#drop").classList.add("over");
+}));
+["dragleave","drop"].forEach(k => $("#drop").addEventListener(k, e => {
+  e.preventDefault(); $("#drop").classList.remove("over");
+}));
+$("#drop").addEventListener("drop", e => pick(e.dataTransfer.files[0]));
+
+/* ---------- 提示 ---------- */
+function showError(title, msg){
+  $("#errTitle").textContent = title;
+  $("#errMsg").textContent = msg || "";
+  $("#err").classList.add("on");
+  window.scrollTo({top: 0, behavior: "smooth"});
+}
+function clearError(){ $("#err").classList.remove("on"); }
+
+/* ---------- 参数 ---------- */
+$("#sw").addEventListener("click", () => {
+  $("#sw").classList.toggle("off");
+  $("#swLabel").textContent = $("#sw").classList.contains("off") ? "不允许" : "允许";
+});
+$("#reset").addEventListener("click", () => {
+  $("#start").value = "";
+  $("#sw").classList.remove("off");
+  $("#swLabel").textContent = "允许";
+});
+
+/* ---------- 生成 ---------- */
+async function generate(){
+  if(!state.file) return;
+  const t0 = performance.now();
+  const btn = $("#go");
+  btn.disabled = true;
+  btn.classList.add("loading");
+  btn.innerHTML = '<span class="spin"></span>排产中…';
+  $("#statusNote").textContent = "正在清洗台账、排程、校验…";
+  clearError();
+  const fd = new FormData();
+  fd.append("file", state.file, state.file.name);
+  fd.append("start_date", $("#start").value || "");
+  fd.append("allow_switch", $("#sw").classList.contains("off") ? "false" : "true");
+  try{
+    const res = await fetch("/api/plan", {method: "POST", body: fd});
+    const data = await res.json().catch(() => ({detail: "服务返回的内容看不懂"}));
+    if(!res.ok) throw new Error(data.detail || "生成失败");
+    render(data);
+    sessionStorage.setItem("lastJob", data.job_id);
+    history.replaceState(null, "", "?job=" + data.job_id);
+    $("#statusNote").textContent = "生成完成，可下载 4 个文件";
+    $("#elapsed").textContent = "本次用时 " + ((performance.now()-t0)/1000).toFixed(1) + " 秒";
+  }catch(err){
+    showError("排产没有成功", err.message + "（页面数据没有丢，改完可以直接重试）");
+    $("#statusNote").textContent = "出错了，见页面顶部提示";
+  }finally{
+    btn.disabled = false;
+    btn.classList.remove("loading");
+    btn.innerHTML = "▶ 开始排产";
+  }
+}
+$("#go").addEventListener("click", generate);
+
+/* ---------- 渲染 ---------- */
+function render(d){
+  state.data = d;
+  $("#params").textContent = d.params;
+  $("#empty").style.display = "none";
+  $("#results").style.display = "block";
+  $("#metrics").innerHTML = d.metrics.map(m =>
+    `<div class="m ${m.tone||''}"><div class="k">${m.k}</div>
+     <div class="v">${m.v}<span class="u">${m.u||''}</span></div><div class="s">${m.s||''}</div></div>`).join("");
+  $("#downloads").innerHTML = "↓ 下载：" + d.downloads.map(x =>
+    `<a href="${x.url}" download>${x.name}</a>`).join("");
+  renderSchedule(d.schedule);
+  renderGantt(d.gantt);
+  renderRisks(d.risks);
+  renderCheckup(d.issues, d.violations);
+  activate((location.hash || "#schedule").slice(1));   // 支持 ?job=x#gantt 直达某个页签
+}
+
+/* 切换页签（点上面那排，或用地址 hash 直达） */
+function activate(p){
+  if(!["schedule","gantt","risk","checkup"].includes(p)) p = "schedule";
+  document.querySelectorAll("#tabs [data-p]").forEach(x => x.classList.toggle("on", x.dataset.p === p));
+  ["schedule","gantt","risk","checkup"].forEach(k =>
+    $("#panel-" + k).style.display = (k === p ? "block" : "none"));
+}
+
+function renderSchedule(rows){
+  $("#panel-schedule").innerHTML = `<table><thead><tr>
+    <th>机台</th><th>单号</th><th>工序</th><th class="num">数量</th><th>开工</th><th>完工</th>
+    <th class="num">工时(分钟)</th><th>产品</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td><span class="mc">${r.machine}</span></td><td class="mono">${r.order}</td>
+      <td>${r.op}</td><td class="num">${r.qty}</td><td class="mono">${r.start}</td>
+      <td class="mono">${r.end}</td><td class="num">${r.minutes}</td><td>${r.product}</td></tr>`).join("") +
+    `</tbody></table><div class="hint">共 ${rows.length} 道工序 · 按机台分组排序 · 工时 = 分钟/件 × 数量</div>`;
+}
+
+function renderGantt(g){
+  const colors = {};
+  let i = 0;
+  g.machines.forEach(m => m.bars.forEach(b => {
+    if(!(b.product in colors)) colors[b.product] = PALETTE[i++ % PALETTE.length];
+  }));
+  const axis = g.days.map(d => `<span style="left:${d.left}%">${d.label}</span>`).join("");
+  const rows = g.machines.map(m => {
+    const ticks = g.days.map(d => `<div class="g-tick" style="left:${d.left}%"></div>`).join("");
+    const bars = m.bars.map(b =>
+      `<div class="g-bar" title="${b.tip}" style="left:${b.left}%;width:${b.width}%;background:${colors[b.product]}">${b.order.slice(-3)}</div>`).join("");
+    return `<div class="g-row"><div class="g-name">${m.name}<em>${m.load}h</em></div>
+            <div class="g-track">${ticks}${bars}</div></div>`;
+  }).join("");
+  $("#panel-gantt").innerHTML = `<div class="gantt"><div class="g-axis">${axis}</div>${rows}</div>
+    <div class="hint">行=机台，横条=一道工序，鼠标悬停看单号/工序/数量/起止。虚线为每日 08:00 分界。</div>`;
+}
+
+function renderRisks(rs){
+  const body = rs.map(r => {
+    const cls = r.status === "迟到" ? "late" : "";
+    const gap = r.gap === null ? '<span class="dim">—</span>'
+      : `<span class="${r.gap < 0 ? 'gap' : ''}">${r.gap > 0 ? "+" : ""}${r.gap}</span>`;
+    return `<tr class="${cls}"><td class="mono">${r.order}</td><td class="mono">${r.due}</td>
+      <td class="mono ${r.eta==='未排产'?'dim':''}">${r.eta}</td><td class="num">${gap}</td>
+      <td>${r.machine==='—'?'<span class="dim">—</span>':'<span class="mc">'+r.machine+'</span>'}</td>
+      <td>${r.op}</td><td>${r.status}</td><td style="white-space:normal">${r.note}</td></tr>`;
+  }).join("");
+  const late = rs.filter(r => r.status === "迟到").length;
+  $("#panel-risk").innerHTML = `<table><thead><tr><th>单号</th><th>交期</th><th>预计完工</th>
+    <th class="num">差额(天)</th><th>卡在哪台机</th><th>卡在哪道工序</th><th>状态</th><th>说明</th>
+    </tr></thead><tbody>${body}</tbody></table>
+    <div class="hint">合计 ${rs.length} 单：<b>${late} 单迟到</b>；差额 = 交期当天 17:00 − 末道工序完工，负数即迟到天数。</div>`;
+}
+
+function renderCheckup(issues, violations){
+  const groups = {};
+  issues.forEach(i => (groups[i.category] = groups[i.category] || []).push(i));
+  const cats = Object.keys(groups).map((c, idx) => {
+    const need = groups[c].filter(i => i.need_confirm).length;
+    const rows = groups[c].map(i => `<tr><td class="mono">${i.where}</td>
+      <td style="white-space:normal">${i.symptom}</td><td style="white-space:normal">${i.action}</td>
+      <td>${i.need_confirm ? '是' : '否'}</td></tr>`).join("");
+    return `<div class="cat"><h3>${idx+1}. ${c}（${groups[c].length} 条
+      ${need ? `<em>需确认 ${need} 条</em>` : ''}）</h3>
+      <table><thead><tr><th>位置</th><th>现象</th><th>处理方式</th><th>需客户确认</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  }).join("");
+  const v = violations.length
+    ? `<div class="alert err on"><span>✕</span><div><b>校验器报了 ${violations.length} 项违反，本次结果不能用</b></div></div>`
+    : `<div class="hint" style="margin-top:12px">校验器：四条硬约束 0 违反（不重不漏 / 机台与工时 / 不倒序 / 不重叠）</div>`;
+  $("#panel-checkup").innerHTML = v + cats;
+}
+
+/* ---------- 页签 ---------- */
+$("#tabs").addEventListener("click", e => {
+  const t = e.target.closest("[data-p]");
+  if(t) activate(t.dataset.p);
+});
+
+/* ---------- 刷新后恢复 / 自测错误态 ---------- */
+(function boot(){
+  if(location.hash === "#demo-error"){
+    showError("这个文件打不开，不是 Excel 台账",
+      "当前文件：排产说明.txt。请上传 .xlsx 文件，且要包含「订单」「设备」「工艺路线」三个工作表。");
+    $("#statusNote").textContent = "选错文件了，重新选一个";
+    return;
+  }
+  const q = new URLSearchParams(location.search).get("job");
+  const jid = q || sessionStorage.getItem("lastJob");
+  if(!jid) return;
+  fetch("/api/result/" + jid).then(r => r.ok ? r.json() : null)
+    .then(d => { if(d){ render(d); $("#statusNote").textContent = "已恢复上次结果"; } })
+    .catch(() => {});
+})();
+</script>
+</body>
+</html>
