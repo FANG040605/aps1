@@ -44,12 +44,18 @@ python run.py data/宏达精密_订单台账.xlsx --out out
 out/排单表.xlsx    out/甘特图.html    out/风险清单.md    out/体检报告.md
 ```
 
-### 网页版（前后端打通后）
+### 网页版（本地服务，N5 已完成）
 
 ```bash
 python web/app.py --port 8765
 # 浏览器打开 http://127.0.0.1:8765
 ```
+
+网页版走的是同一个 `core/pipeline.py`，所以页面上的数字和命令行完全一致。
+上传 → 生成 → 四个页签（排单表 / 甘特图 / 风险清单 / 体检报告）→ 下载 4 个文件。
+端口被占用时换一个：`python web/app.py --port 8766`。
+
+接口契约见 `web/接口契约.md`（3 个接口 + 错误码 + 各自测开关）。
 
 ### 单元测试
 
@@ -76,12 +82,14 @@ aps-scheduler/
 │   ├── checker.py         四条硬约束，独立于求解器
 │   └── report.py          排单表 / 甘特 / 风险 / 体检
 ├── web/                   本地服务与前端
-│   ├── app.py             http.server，标准库
-│   └── index.html         单页：上传 → 生成 → 四页签 → 下载
+│   ├── app.py             http.server，标准库（不引 Flask）
+│   ├── index.html         单页：上传 → 生成 → 四页签 → 下载
+│   └── 接口契约.md         3 个 API、错误码、自测开关
 ├── tests/                 单元测试（≥3 个）
 ├── docs/
 │   ├── 设计说明书.md      N2
 │   ├── ui/                N3：三张图 + 交互说明
+│   ├── screenshots/       N5：成功态 / 错误态 / 三个页签
 │   └── 测试报告.md        N6
 ├── data/                  客户台账放这里，已 gitignore，绝不进库
 └── out/                   程序产物，已 gitignore

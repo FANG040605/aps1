@@ -18,12 +18,16 @@ HEADER_KEYS = {
 SCAN_ROWS = 6          # 表头最多往下找 6 行
 
 
+class WorkbookError(Exception):
+    """台账结构不对：缺工作表 / 找不到表头 / 表里没数据。提示可直接给客户看。"""
+
+
 def read_workbook(path):
     """读工作簿，返回 {sheet名: {"header_row", "headers", "records"}}。"""
     wb = load_workbook(path, data_only=True)
     missing = [s for s in REQUIRED_SHEETS if s not in wb.sheetnames]
     if missing:
-        raise ValueError(f"缺少工作表：{'、'.join(missing)}；需要「订单 / 设备 / 工艺路线」三张表")
+        raise WorkbookError(f"缺少工作表：{'、'.join(missing)}；需要「订单 / 设备 / 工艺路线」三张表")
     return {name: _read_sheet(wb[name], name) for name in REQUIRED_SHEETS}
 
 
@@ -34,7 +38,7 @@ def _find_header(ws, keys):
         hit = sum(1 for k in keys if k in vals)
         if hit >= 2:
             return row[0].row, vals
-    raise ValueError(f"工作表「{ws.title}」找不到表头（应含 {'、'.join(keys)}）")
+    raise WorkbookError(f"工作表「{ws.title}」找不到表头（应含 {'、'.join(keys)}）")
 
 
 def _read_sheet(ws, name):
