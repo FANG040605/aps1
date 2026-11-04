@@ -13,6 +13,7 @@ import shutil
 import threading
 import time
 import uuid
+import webbrowser
 from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -196,10 +197,19 @@ def _cleanup():
         JOBS.pop(job_id, None)
 
 
+def _open_browser(url):
+    """等一下再开浏览器：服务已经 listen 了才去访问，避免打开是空白。"""
+    try:
+        webbrowser.open(url)
+    except Exception:
+        print(f"没能自动打开浏览器，请手动访问：{url}")
+
+
 def main():
     ap = argparse.ArgumentParser(description="宏达精密 · 本地排产助手（网页版）")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
     args = ap.parse_args()
     os.makedirs(JOB_ROOT, exist_ok=True)
     ThreadingHTTPServer.allow_reuse_address = False      # 端口被占用时直接报错，不静默起两个
@@ -208,7 +218,10 @@ def main():
     except OSError:
         print(f"端口 {args.port} 已被占用。换一个端口再试：python web/app.py --port 8766")
         return
-    print(f"排产助手已启动：http://{args.host}:{args.port}    （Ctrl+C 停止）")
+    url = f"http://{args.host}:{args.port}"
+    print(f"排产助手已启动：{url}    （Ctrl+C 停止）")
+    if not args.no_open:
+        threading.Timer(1.2, _open_browser, args=(url,)).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
