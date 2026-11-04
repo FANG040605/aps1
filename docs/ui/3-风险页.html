@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>风险页</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root{
+    --bg:#f1f5f9; --card:#ffffff; --line:#e2e8f0; --ink:#0f172a; --sub:#64748b;
+    --brand:#2563eb; --brand-soft:#eff6ff; --danger:#dc2626; --danger-soft:#fef2f2;
+    --ok:#16a34a; --warn:#d97706; --warn-soft:#fffbeb;
+  }
+  html{ background:#f1f5f9; }
+  body{ width:1440px; background:var(--bg); color:var(--ink);
+        font-family:"Microsoft YaHei","Segoe UI",sans-serif; font-size:14px; line-height:1.6; }
+  .topbar{ height:58px; background:var(--card); border-bottom:1px solid var(--line);
+           display:flex; align-items:center; justify-content:space-between; padding:0 32px; }
+  .brand{ display:flex; align-items:center; gap:10px; font-size:16px; font-weight:700; }
+  .dot{ width:10px; height:10px; border-radius:3px; background:var(--brand); }
+  .brand small{ font-weight:400; color:var(--sub); font-size:13px; margin-left:6px; }
+  .right{ display:flex; gap:12px; align-items:center; color:var(--sub); font-size:13px; }
+  .pill{ border:1px solid var(--line); border-radius:999px; padding:4px 12px; }
+  .wrap{ padding:22px 32px 28px; }
+  .card{ position:relative; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin-bottom:16px; }
+  .tag{ position:absolute; left:-11px; top:-11px; width:24px; height:24px; border-radius:50%;
+        background:var(--brand); color:#fff; font-size:13px; font-weight:700;
+        display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 3px var(--bg); }
+  h2{ font-size:15px; margin-bottom:2px; }
+  h2 em{ font-style:normal; color:var(--sub); font-weight:400; font-size:13px; margin-left:8px; }
+  /* 摘要条 */
+  .summary{ display:flex; gap:14px; margin-top:16px; }
+  .sbox{ flex:1; border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .sbox .k{ font-size:12.5px; color:var(--sub); }
+  .sbox .v{ font-size:24px; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .sbox .v span{ font-size:13px; font-weight:400; color:var(--sub); margin-left:4px; }
+  .sbox.red{ background:var(--danger-soft); border-color:#fecaca; }
+  .sbox.red .v{ color:var(--danger); }
+  .sbox.amber{ background:var(--warn-soft); border-color:#fde68a; }
+  .sbox.amber .v{ color:var(--warn); }
+  .sbox.green .v{ color:var(--ok); }
+  /* 表 */
+  table{ width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
+  th{ background:#f8fafc; color:var(--sub); font-weight:600; text-align:left;
+      padding:11px 12px; border-bottom:1px solid var(--line); font-size:12.5px; white-space:nowrap; }
+  td{ padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .mono{ font-family:Consolas,monospace; font-size:12.5px; }
+  .num{ text-align:right; }
+  .mc{ display:inline-block; background:var(--brand-soft); color:#1d4ed8; border-radius:5px;
+       padding:2px 8px; font-size:12px; font-weight:600; font-family:Consolas,monospace; }
+  /* 迟到行 */
+  tr.late td{ background:var(--danger-soft); }
+  tr.late td:first-child{ box-shadow:inset 3px 0 0 var(--danger); }
+  .gap{ color:var(--danger); font-weight:700; }
+  .chip{ display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; font-weight:600; }
+  .chip.r{ background:#fee2e2; color:#b91c1c; }
+  .chip.w{ background:#fef3c7; color:#92400e; }
+  .chip.g{ background:#dcfce7; color:#15803d; }
+  /* 合计行 */
+  tfoot td{ background:#f8fafc; border-top:2px solid var(--line); font-weight:700; }
+  .note{ margin-top:14px; color:var(--sub); font-size:12.5px; }
+  .note b{ color:var(--ink); }
+  .legend{ display:flex; gap:18px; margin-top:12px; color:#94a3b8; font-size:12px; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span>宏达精密 · 排产助手 <small>本地版 v1.0</small></div>
+    <div class="right"><span>重新排产</span><span class="pill">交期口径 当天 17:00</span></div>
+  </div>
+
+  <div class="wrap">
+    <!-- ① 摘要 -->
+    <div class="card">
+      <div class="tag">1</div>
+      <h2>交期风险摘要 <em>张工只看这一排，就知道敢不敢答应客户</em></h2>
+      <div class="summary">
+        <div class="sbox red"><div class="k">确定迟到</div><div class="v">3<span>单</span></div></div>
+        <div class="sbox amber"><div class="k">交期待确认</div><div class="v">2<span>单</span></div></div>
+        <div class="sbox"><div class="k">最晚一单差</div><div class="v">-4<span>天</span></div></div>
+        <div class="sbox"><div class="k">瓶颈机台</div><div class="v" style="font-size:20px">CNC-01<span>铣</span></div></div>
+        <div class="sbox green"><div class="k">按期完工</div><div class="v">8<span>单</span></div></div>
+      </div>
+    </div>
+
+    <!-- ② 风险清单表 -->
+    <div class="card">
+      <div class="tag">2</div>
+      <h2>交期风险清单 <em>每条都能指到「哪台机、哪道工序」，不是一句"可能延迟"</em></h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:140px">单号</th><th style="width:110px">交期</th><th style="width:140px">预计完工</th>
+            <th style="width:100px" class="num">差额</th><th style="width:130px">卡在哪台机</th>
+            <th style="width:110px">卡在哪道工序</th><th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="late">
+            <td class="mono">HD-2026-105</td><td class="mono">11-11</td><td class="mono">11-15 14:20</td>
+            <td class="num gap">-4 天</td><td><span class="mc">CNC-01</span></td><td>铣</td>
+            <td>材料 11/8 才到；阀体D 只有 CNC 能铣</td>
+          </tr>
+          <tr class="late">
+            <td class="mono">HD-2026-111</td><td class="mono">11-11</td><td class="mono">11-13 10:00</td>
+            <td class="num gap">-2 天</td><td><span class="mc">CNC-02</span></td><td>铣</td>
+            <td>急单但排在 101 之后；CNC-03 停机少了 1/3 铣削产能</td>
+          </tr>
+          <tr class="late">
+            <td class="mono">HD-2026-107</td><td class="mono">11-13</td><td class="mono">11-14 08:00</td>
+            <td class="num gap">-1 天</td><td><span class="mc">GRD-01</span></td><td>磨</td>
+            <td>磨是瓶颈机台，阀芯C 与端盖E 抢同一台</td>
+          </tr>
+          <tr>
+            <td class="mono">HD-2026-103</td><td class="mono" style="color:var(--warn)">需确认</td><td class="mono">11-12 19:20</td>
+            <td class="num" style="color:var(--warn)">—</td><td><span class="mc">LAT-01</span></td><td>车</td>
+            <td>交期空白，备注"客户催，越早越好"，按接单日+3 工作日折算</td>
+          </tr>
+          <tr>
+            <td class="mono">HD-2026-108</td><td class="mono" style="color:var(--warn)">需确认</td><td class="mono">11-13 15:20</td>
+            <td class="num" style="color:var(--warn)">—</td><td><span class="mc">DRL-02</span></td><td>钻</td>
+            <td>交期写"月底前"，按当月最后一天算，实际可能更早</td>
+          </tr>
+          <tr>
+            <td class="mono">HD-2026-110</td><td class="mono">11-15</td><td class="mono" style="color:#94a3b8">未排产</td>
+            <td class="num" style="color:#94a3b8">—</td><td style="color:#94a3b8">—</td><td style="color:#94a3b8">—</td>
+            <td>数量空白，按约定不排产，待客户补数量</td>
+          </tr>
+          <tr>
+            <td class="mono">HD-2026-113</td><td class="mono">11-22</td><td class="mono">11-18 09:00</td>
+            <td class="num" style="color:var(--ok)">+4 天余量</td><td><span class="mc">LAT-03</span></td><td>车</td>
+            <td>备注"先做一半"，按 17.5 件折算（取整 18）</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>合计</td><td>共 13 单</td><td>—</td><td class="num gap">3 迟到 / 2 待确认</td>
+            <td>瓶颈 CNC-01 / GRD-01</td><td>—</td><td>另 8 单按期</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="legend">
+        <span>■ 红底 = 已确定迟到（差额为负）</span>
+        <span>■ 琥珀 = 交期为文字，口径待客户确认</span>
+        <span>灰字 = 未排产</span>
+      </div>
+    </div>
+
+    <!-- ③ 口径说明 -->
+    <div class="card">
+      <div class="tag">3</div>
+      <h2>差额怎么算的 <em>写清口径，客户才能复核</em></h2>
+      <div class="note">
+        差额 = <b>交期当天 17:00</b> − <b>该单最后一道工序完工时间</b>；负数为迟到天数，正数为余量。
+        交期为文字（尽快 / 月底前 / 空白）的单，按<b>约定折算口径</b>计算并标"需确认"，<b>不当作准确交期</b>。
+      </div>
+    </div>
+  </div>
+</body>
+</html>

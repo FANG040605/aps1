@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>状态与反馈</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root{
+    --bg:#f1f5f9; --card:#ffffff; --line:#e2e8f0; --ink:#0f172a; --sub:#64748b;
+    --brand:#2563eb; --brand-soft:#eff6ff; --danger:#dc2626; --danger-soft:#fef2f2;
+    --ok:#16a34a; --warn:#d97706;
+  }
+  html{ background:#f1f5f9; }
+  html{ background:#f1f5f9; }
+  body{ width:1440px; background:var(--bg); color:var(--ink); padding:26px 32px;
+        font-family:"Microsoft YaHei","Segoe UI",sans-serif; font-size:14px; line-height:1.6; }
+  .title{ font-size:17px; font-weight:700; margin-bottom:4px; }
+  .subtitle{ color:var(--sub); font-size:13px; margin-bottom:18px; }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .card{ position:relative; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; }
+  .card h3{ font-size:14px; margin-bottom:2px; }
+  .card h3 em{ font-style:normal; font-weight:400; color:var(--sub); font-size:12.5px; margin-left:6px; }
+  .stage{ margin-top:14px; border:1px solid #eef2f7; border-radius:10px; background:#fbfcfe; padding:16px; min-height:190px; }
+  .tag{ position:absolute; left:-11px; top:-11px; width:24px; height:24px; border-radius:50%;
+        background:var(--brand); color:#fff; font-size:12px; font-weight:700;
+        display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 3px var(--bg); }
+  /* 按钮 */
+  .btn{ height:44px; padding:0 28px; border-radius:8px; background:var(--brand); color:#fff;
+        font-size:14px; font-weight:600; display:inline-flex; align-items:center; gap:8px; }
+  .btn.disabled{ background:#e2e8f0; color:#94a3b8; }
+  .btn.loading{ background:#93b4f5; }
+  .spin{ width:14px; height:14px; border:2px solid rgba(255,255,255,.45); border-top-color:#fff;
+         border-radius:50%; }
+  .row{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .tip{ font-size:12.5px; color:var(--sub); }
+  /* 提示条 */
+  .alert{ border-radius:8px; padding:12px 14px; font-size:13px; display:flex; gap:10px; align-items:flex-start; }
+  .alert.err{ background:var(--danger-soft); border:1px solid #fecaca; color:#991b1b; }
+  .alert.warn{ background:#fffbeb; border:1px solid #fde68a; color:#92400e; }
+  .alert.info{ background:var(--brand-soft); border:1px solid #dbeafe; color:#1e3a8a; }
+  .alert b{ display:block; margin-bottom:2px; }
+  /* 空态 */
+  .empty{ display:flex; flex-direction:column; align-items:center; justify-content:center;
+          gap:6px; height:158px; color:var(--sub); font-size:13px; }
+  .empty .box{ width:46px; height:46px; border-radius:12px; background:#f1f5f9;
+               display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:22px; }
+  .empty b{ color:var(--ink); font-size:14px; }
+  .mini{ display:flex; gap:10px; margin-top:12px; }
+  .mini div{ flex:1; height:8px; border-radius:4px; background:#e8eefb; }
+  .mini .on{ background:var(--brand); }
+</style>
+</head>
+<body>
+  <div class="title">状态与反馈 · 四种最容易漏的画面</div>
+  <div class="subtitle">空态 / 加载中 / 错误态 / 禁用态 —— 任务是「文件不对时给中文提示，不能白屏」</div>
+
+  <div class="grid">
+    <!-- 1 空态 -->
+    <div class="card">
+      <div class="tag">1</div>
+      <h3>空态 <em>刚打开、还没传文件</em></h3>
+      <div class="stage">
+        <div class="empty">
+          <div class="box">▤</div>
+          <b>还没有排产结果</b>
+          <span>先在左上角上传台账，再点「开始排产」</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 加载中 -->
+    <div class="card">
+      <div class="tag">2</div>
+      <h3>加载中 <em>按钮变灰 + 转圈 + 进度条，防重复点击</em></h3>
+      <div class="stage">
+        <div class="row">
+          <div class="btn loading"><span class="spin"></span>排产中…</div>
+          <div class="tip">正在清洗 14 条订单 · 已用 1.2 秒</div>
+        </div>
+        <div class="mini"><div class="on"></div><div class="on"></div><div></div><div></div></div>
+        <div class="alert info" style="margin-top:16px">
+          <span>ⓘ</span><div><b>期间不能重复点</b>按钮自动禁用，进度条走完才出结果。</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 错误态 -->
+    <div class="card">
+      <div class="tag">3</div>
+      <h3>错误态 <em>传了 .txt / 缺 sheet / 空表</em></h3>
+      <div class="stage">
+        <div class="alert err">
+          <span>✕</span>
+          <div><b>这个文件打不开，不是 Excel 台账</b>
+            当前文件：排产说明.txt。请上传 .xlsx 文件，且要包含「订单」「设备」「工艺路线」三个工作表。</div>
+        </div>
+        <div class="alert warn" style="margin-top:12px">
+          <span>!</span>
+          <div><b>缺少「工艺路线」工作表</b>这个表里有单件工时，没有它算不出每道工序要多久。</div>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <div class="btn">重新选择文件</div>
+          <div class="tip">页面不跳转、内容不丢，改完直接重传</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 禁用态 -->
+    <div class="card">
+      <div class="tag">4</div>
+      <h3>禁用态 <em>参数没填齐 / 文件没传</em></h3>
+      <div class="stage">
+        <div class="row">
+          <div class="btn disabled">▶ 开始排产</div>
+          <div class="tip">先上传台账，按钮才会亮</div>
+        </div>
+        <div class="alert info" style="margin-top:16px">
+          <span>ⓘ</span>
+          <div><b>三种禁用原因，提示要具体</b>
+            ① 没传文件 ② 文件解析失败 ③ 起始日早于今天且已过本周</div>
+        </div>
+        <div class="alert warn" style="margin-top:12px">
+          <span>!</span>
+          <div><b>数量空白 6 单</b>按当前设置不排产，会进「需客户确认」清单，不影响其他单。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

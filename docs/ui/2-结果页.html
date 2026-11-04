@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>结果页</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root{
+    --bg:#f1f5f9; --card:#ffffff; --line:#e2e8f0; --ink:#0f172a; --sub:#64748b;
+    --brand:#2563eb; --brand-soft:#eff6ff; --danger:#dc2626; --danger-soft:#fef2f2;
+    --ok:#16a34a; --warn:#d97706;
+  }
+  html{ background:#f1f5f9; }
+  body{ width:1440px; background:var(--bg); color:var(--ink);
+        font-family:"Microsoft YaHei","Segoe UI",sans-serif; font-size:14px; line-height:1.6; }
+  .topbar{ height:58px; background:var(--card); border-bottom:1px solid var(--line);
+           display:flex; align-items:center; justify-content:space-between; padding:0 32px; }
+  .brand{ display:flex; align-items:center; gap:10px; font-size:16px; font-weight:700; }
+  .dot{ width:10px; height:10px; border-radius:3px; background:var(--brand); }
+  .brand small{ font-weight:400; color:var(--sub); font-size:13px; margin-left:6px; }
+  .right{ display:flex; gap:12px; align-items:center; color:var(--sub); font-size:13px; }
+  .pill{ border:1px solid var(--line); border-radius:999px; padding:4px 12px; }
+  .wrap{ padding:22px 32px 28px; }
+  .card{ position:relative; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin-bottom:16px; }
+  .tag{ position:absolute; left:-11px; top:-11px; width:24px; height:24px; border-radius:50%;
+        background:var(--brand); color:#fff; font-size:13px; font-weight:700;
+        display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 3px var(--bg); }
+  h2{ font-size:15px; margin-bottom:2px; }
+  h2 em{ font-style:normal; color:var(--sub); font-weight:400; font-size:13px; margin-left:8px; }
+  /* ① 六张指标卡 */
+  .metrics{ display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-top:16px; }
+  .m{ border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:#fff; }
+  .m .k{ color:var(--sub); font-size:12.5px; }
+  .m .v{ font-size:26px; font-weight:700; letter-spacing:-.5px; margin-top:6px;
+         font-variant-numeric:tabular-nums; }
+  .m .u{ font-size:13px; font-weight:400; color:var(--sub); margin-left:4px; }
+  .m .s{ font-size:12px; color:#94a3b8; margin-top:2px; }
+  .m.ok .v{ color:var(--ok); } .m.bad .v{ color:var(--danger); } .m.warn .v{ color:var(--warn); }
+  /* ② 页签 */
+  .tabs{ display:flex; gap:6px; border-bottom:1px solid var(--line); margin-top:16px; }
+  .tabs div{ padding:10px 18px; font-size:14px; color:var(--sub); border-bottom:2px solid transparent; }
+  .tabs .on{ color:var(--brand); font-weight:600; border-bottom-color:var(--brand); }
+  .tabs .dl{ margin-left:auto; color:var(--brand); font-size:13px; }
+  /* ③ 排单表 */
+  table{ width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
+  th{ background:#f8fafc; color:var(--sub); font-weight:600; text-align:left;
+      padding:10px 12px; border-bottom:1px solid var(--line); font-size:12.5px; white-space:nowrap;}
+  td{ padding:10px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap;
+      font-variant-numeric:tabular-nums; }
+  tbody tr:nth-child(even){ background:#fcfdff; }
+  .mono{ font-family:Consolas,monospace; font-size:12.5px; }
+  .mc{ display:inline-block; background:var(--brand-soft); color:#1d4ed8; border-radius:5px;
+       padding:2px 8px; font-size:12px; font-weight:600; font-family:Consolas,monospace;}
+  .op{ color:var(--ink); }
+  .num{ text-align:right; }
+  .legend{ margin-top:12px; color:#94a3b8; font-size:12px; display:flex; justify-content:space-between;}
+  /* 底部参数行 */
+  .param-line{ background:var(--brand-soft); border:1px solid #dbeafe; border-radius:8px;
+               padding:10px 14px; font-family:Consolas,"Microsoft YaHei",monospace;
+               font-size:12px; color:#1e3a8a; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span>宏达精密 · 排产助手 <small>本地版 v1.0</small></div>
+    <div class="right"><span>重新排产</span><span class="pill">本次用时 1.8 秒</span></div>
+  </div>
+
+  <div class="wrap">
+    <!-- ① 六张指标卡 -->
+    <div class="card">
+      <div class="tag">1</div>
+      <h2>排产结果总览 <em>六张卡，一眼看出「能不能按期、有没有撞机」</em></h2>
+      <div class="metrics">
+        <div class="m"><div class="k">读入订单</div><div class="v">14<span class="u">条</span></div><div class="s">排产 13 单</div></div>
+        <div class="m"><div class="k">工序任务</div><div class="v">47<span class="u">道</span></div><div class="s">分钟/件 × 数量</div></div>
+        <div class="m"><div class="k">总完工时间</div><div class="v">11-14<span class="u">08:00</span></div><div class="s">makespan 6480 分钟</div></div>
+        <div class="m ok"><div class="k">校验违反</div><div class="v">0<span class="u">项</span></div><div class="s">不重不漏/机台/倒序/重叠</div></div>
+        <div class="m bad"><div class="k">迟到订单</div><div class="v">3<span class="u">单</span></div><div class="s">见风险清单</div></div>
+        <div class="m warn"><div class="k">数据问题</div><div class="v">12<span class="u">条</span></div><div class="s">8 类，3 类待确认</div></div>
+      </div>
+    </div>
+
+    <!-- ② 页签 + ③ 排单表 -->
+    <div class="card">
+      <div class="tag">2</div>
+      <h2>明细 <em>四个页签 + 右侧下载</em></h2>
+      <div class="tabs">
+        <div class="on">排单表</div><div>甘特图</div><div>风险清单</div><div>体检报告</div>
+        <div class="dl">↓ 下载 4 个文件</div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:110px">机台</th><th style="width:140px">单号</th><th style="width:90px">工序</th>
+            <th style="width:80px" class="num">数量</th><th style="width:150px">开工</th>
+            <th style="width:150px">完工</th><th style="width:110px" class="num">工时</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="mc">SAW-01</span></td><td class="mono">HD-2026-101</td><td>下料</td><td class="num">40</td><td class="mono">11-09 08:00</td><td class="mono">11-09 21:20</td><td class="num">800 分</td></tr>
+          <tr><td><span class="mc">LAT-01</span></td><td class="mono">HD-2026-101</td><td>车</td><td class="num">40</td><td class="mono">11-09 21:20</td><td class="mono">11-11 03:20</td><td class="num">1800 分</td></tr>
+          <tr><td><span class="mc">CNC-01</span></td><td class="mono">HD-2026-101</td><td>铣</td><td class="num">40</td><td class="mono">11-11 03:20</td><td class="mono">11-12 19:20</td><td class="num">2400 分</td></tr>
+          <tr><td><span class="mc">DRL-01</span></td><td class="mono">HD-2026-101</td><td>钻</td><td class="num">40</td><td class="mono">11-12 19:20</td><td class="mono">11-13 15:20</td><td class="num">1200 分</td></tr>
+          <tr><td><span class="mc">GRD-01</span></td><td class="mono">HD-2026-101</td><td>磨</td><td class="num">40</td><td class="mono">11-13 15:20</td><td class="mono">11-14 08:00</td><td class="num">1000 分</td></tr>
+          <tr><td><span class="mc">LAT-02</span></td><td class="mono">HD-2026-108</td><td>车</td><td class="num">50</td><td class="mono">11-09 08:00</td><td class="mono">11-10 09:00</td><td class="num">1500 分</td></tr>
+          <tr><td><span class="mc">DRL-02</span></td><td class="mono">HD-2026-108</td><td>钻</td><td class="num">50</td><td class="mono">11-10 09:00</td><td class="mono">11-11 05:50</td><td class="num">1250 分</td></tr>
+          <tr><td><span class="mc">CNC-02</span></td><td class="mono">HD-2026-104</td><td>铣</td><td class="num">80</td><td class="mono">11-09 09:00</td><td class="mono">11-11 14:20</td><td class="num">3200 分</td></tr>
+        </tbody>
+      </table>
+      <div class="legend"><span>共 47 道工序 · 按机台分组排序 · 灰色为隔行底纹</span><span>样例数据，非最终结果</span></div>
+    </div>
+
+    <div class="card">
+      <div class="tag">3</div>
+      <h2>本次参数 <em>结果页与打印件同源，事后不扯皮</em></h2>
+      <div class="param-line">
+        起始 2026-11-09(周一) 08:00 ｜ 每班 8h，2 班制 16h/天，LAT-03 为 3 班 ｜ 周日不排 ｜ 交期当天 17:00
+        ｜ 工时 分钟/件×数量 ｜ 换机台 允许 ｜ 数量空白 不排产 ｜ CNC-03 停机 ｜ HT-01 外协不计产能
+      </div>
+    </div>
+  </div>
+</body>
+</html>
