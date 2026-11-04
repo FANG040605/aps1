@@ -299,8 +299,18 @@ async function generate(){
     $("#statusNote").textContent = "生成完成，可下载 4 个文件";
     $("#elapsed").textContent = "本次用时 " + ((performance.now()-t0)/1000).toFixed(1) + " 秒";
   }catch(err){
-    showError("排产没有成功", err.message + "（页面数据没有丢，改完可以直接重试）");
-    $("#statusNote").textContent = "出错了，见页面顶部提示";
+    const msg = err && err.message ? err.message : String(err);
+    const isNet = (err instanceof TypeError) || /Failed to fetch|NetworkError|Load failed/i.test(msg);
+    if(isNet){
+      showError("连不上本地服务，请求没发出去",
+        "三个常见原因，按顺序看一眼：① 后台那个黑窗口已经关了——重新双击「启动.bat」；" +
+        "② 地址栏不是 http://127.0.0.1:8765 开头——换成这个地址重新打开；" +
+        "③ 换了端口启动——用黑窗口里提示的那个地址。改好后直接点「开始排产」重试。");
+      $("#statusNote").textContent = "连不上服务，见页面顶部提示";
+    }else{
+      showError("排产没有成功", msg + "（页面数据没有丢，改完可以直接重试）");
+      $("#statusNote").textContent = "出错了，见页面顶部提示";
+    }
   }finally{
     btn.disabled = false;
     btn.classList.remove("loading");
@@ -406,7 +416,20 @@ $("#tabs").addEventListener("click", e => {
 });
 
 /* ---------- 刷新后恢复 / 自测错误态 ---------- */
+function checkOrigin(){
+  /* 双击 html 文件打开时是 file://，fetch 根本发不出去，
+     浏览器只会甩一句 Failed to fetch。这里提前把话说清楚。 */
+  if(location.protocol !== "file:") return false;
+  showError("页面打开方式不对，连不上排产引擎",
+    "你现在是直接双击网页文件打开的（地址栏以 file:// 开头），这样永远排不了产。" +
+    "请先双击项目里的「启动.bat」，等浏览器自动打开 http://127.0.0.1:8765 ，在那里面操作。");
+  $("#statusNote").textContent = "打开方式不对，见顶部说明";
+  $("#go").disabled = true;
+  return true;
+}
+
 (function boot(){
+  if(checkOrigin()) return;
   if(location.hash === "#demo-error"){
     showError("这个文件打不开，不是 Excel 台账",
       "当前文件：排产说明.txt。请上传 .xlsx 文件，且要包含「订单」「设备」「工艺路线」三个工作表。");

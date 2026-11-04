@@ -12,6 +12,7 @@ import os
 import shutil
 import threading
 import time
+import urllib.request
 import uuid
 import webbrowser
 from email import policy
@@ -44,6 +45,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             return self._send_file(os.path.join(ROOT, "index.html"), "text/html; charset=utf-8")
+        if path == "/api/ping":
+            return self._json({"ok": True, "app": "aps-scheduler"}, 200)
         if path.startswith("/api/result/"):
             return self._result(path.rsplit("/", 1)[-1])
         if path.startswith("/api/download/"):
@@ -205,6 +208,24 @@ def _open_browser(url):
         print(f"没能自动打开浏览器，请手动访问：{url}")
 
 
+def _already_running(url):
+    """端口被占时先问一句：占它的是不是我们自己？
+
+    是的话说明客户重复双击了启动器，直接开浏览器就行，
+    没必要让客户看"端口被占用"这种他看不懂的话。
+    """
+    try:
+        with urllib.request.urlopen(url + "/api/ping", timeout=2) as r:
+            if r.status == 200:
+                print(f"服务本来就已经在运行了：{url}")
+                print("已经为你打开浏览器，不用重复启动。")
+                _open_browser(url)
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def main():
     ap = argparse.ArgumentParser(description="宏达精密 · 本地排产助手（网页版）")
     ap.add_argument("--port", type=int, default=8765)
@@ -213,12 +234,13 @@ def main():
     args = ap.parse_args()
     os.makedirs(JOB_ROOT, exist_ok=True)
     ThreadingHTTPServer.allow_reuse_address = False      # 端口被占用时直接报错，不静默起两个
+    url = f"http://{args.host}:{args.port}"
     try:
         srv = ThreadingHTTPServer((args.host, args.port), Handler)
     except OSError:
-        print(f"端口 {args.port} 已被占用。换一个端口再试：python web/app.py --port 8766")
+        if not _already_running(url):
+            print(f"端口 {args.port} 被别的程序占用了。换一个端口再试：python web/app.py --port 8766")
         return
-    url = f"http://{args.host}:{args.port}"
     print(f"排产助手已启动：{url}    （Ctrl+C 停止）")
     if not args.no_open:
         threading.Timer(1.2, _open_browser, args=(url,)).start()
