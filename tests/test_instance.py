@@ -3,10 +3,11 @@
 import os
 import sys
 import unittest
+from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.instance import resolve_machines  # noqa: E402
+from core.instance import _earliest, resolve_machines  # noqa: E402
 
 MACHINES = [
     {"code": "CNC-01", "ops": ["铣"], "usable": True},
@@ -42,6 +43,30 @@ class TestResolve(unittest.TestCase):
         codes, note = resolve_machines("CNC-03", "铣", MACHINES, allow_switch=False)
         self.assertEqual(codes, [])
         self.assertTrue(note)
+
+
+class TestEarliest(unittest.TestCase):
+    """回归：起始日调早以后，不能让工序排到接单日之前。
+
+    现场：客户把起始日改到 11/01，排单表出现"11/02 开工、11/05 才接单"，
+    活还没接就开工了。原因是 _earliest 只看了到料日，漏了接单日。
+    """
+
+    def test_not_before_recv(self):
+        od = {"recv": date(2026, 11, 6), "material_ready": None}
+        got = _earliest(od, datetime(2026, 11, 1, 8, 0))
+        self.assertEqual(got, datetime(2026, 11, 6, 8, 0), "应顺延到接单当天 08:00")
+
+    def test_not_before_material(self):
+        """到料日比接单日更晚时，取更晚的那个。"""
+        od = {"recv": date(2026, 11, 6), "material_ready": date(2026, 11, 12)}
+        got = _earliest(od, datetime(2026, 11, 1, 8, 0))
+        self.assertEqual(got, datetime(2026, 11, 12, 8, 0))
+
+    def test_start_later_than_both_wins(self):
+        od = {"recv": date(2026, 11, 6), "material_ready": None}
+        got = _earliest(od, datetime(2026, 11, 20, 8, 0))
+        self.assertEqual(got, datetime(2026, 11, 20, 8, 0), "起始日更晚时以起始日为准")
 
 
 if __name__ == "__main__":

@@ -17,14 +17,29 @@ def load_instance(clean, allow_switch=True, start_dt=None):
     tasks, issues, skipped = [], [], []
     routes = {r["product"]: r for r in clean["routes"]}
     usable = [m for m in clean["machines"] if m["usable"]]
+    pushed = 0                                   # 因"起始日早于接单日"被顺延的单数
 
     for od in clean["orders"]:
         reason = _skip_reason(od, routes)
         if reason:
             skipped.append({"order": od, "reason": reason})
             continue
+        if start_dt and od.get("recv") and _day_start(od["recv"]) > start_dt:
+            pushed += 1
         tasks.extend(_order_tasks(od, routes[od["product"]], usable, allow_switch, start_dt, issues))
+    if pushed:
+        _note_pushed(issues, start_dt, pushed)
     return tasks, skipped, issues
+
+
+def _note_pushed(issues, start_dt, pushed):
+    """起始日早于接单日时留一条痕，别让客户以为可以提前开工。"""
+    issues.append({
+        "category": "起始日校验", "where": "订单!接单日期",
+        "symptom": f"起始日 {start_dt:%Y-%m-%d} 早于 {pushed} 张单的接单日期",
+        "action": "这些单顺延到接单日 08:00 之后开工，不会排到接单之前",
+        "need_confirm": False,
+    })
 
 
 def _skip_reason(od, routes):
@@ -59,11 +74,25 @@ def _order_tasks(od, route, usable, allow_switch, start_dt, issues):
 
 
 def _earliest(od, start_dt):
-    """到料日之后才允许开工。"""
-    if od.get("material_ready") is None:
-        return start_dt
-    ready = datetime.combine(od["material_ready"], datetime.min.time()).replace(hour=config.DAY_START_HOUR)
-    return max(start_dt, ready) if start_dt else ready
+    """最早可开工时间：不早于起始日，也不早于接单日、到料日。
+
+    接单日必须算进来。以前漏了这条：把起始日调到接单日之前，
+    排单表就会排出"11/05 开工、11/07 才接单"这种一眼假的计划——
+    活还没接下来，机器怎么先干上了。
+    """
+    cands = []
+    if start_dt:
+        cands.append(start_dt)
+    if od.get("recv"):
+        cands.append(_day_start(od["recv"]))
+    if od.get("material_ready"):
+        cands.append(_day_start(od["material_ready"]))
+    return max(cands) if cands else None
+
+
+def _day_start(day):
+    """日期 → 当天开工时刻（08:00），与日历口径一致。"""
+    return datetime.combine(day, datetime.min.time()).replace(hour=config.DAY_START_HOUR)
 
 
 def resolve_machines(hint, op, usable, allow_switch=True):
