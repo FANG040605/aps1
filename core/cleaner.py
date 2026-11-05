@@ -14,21 +14,37 @@ from datetime import date, datetime, timedelta
 
 import config
 
-ISO_RE = re.compile(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$")
-CN_RE = re.compile(r"^(\d{1,2})\s*月\s*(\d{1,2})\s*日?$")
+ISO_RE = re.compile(r"^(\d{4})\s*[-/.]\s*(\d{1,2})\s*[-/.]\s*(\d{1,2})"
+                   r"(?:\s*[ T]\s*\d{1,2}:\d{2}(?::\d{2})?)?$")
+CN_RE = re.compile(r"^(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?$")
 DIGITS_RE = re.compile(r"\D")
+QTY_RE = re.compile(r"\d+(?:\.\d+)?")
 OP_RE = re.compile(r"^(?P<op>[^（(]+)[（(](?P<mc>[^）)]+)[）)]\s*(?P<mins>\d+(?:\.\d+)?)\s*$")
-MATERIAL_RE = re.compile(r"(\d{1,2})\s*月\s*(\d{1,2})\s*日")
+MATERIAL_RE = re.compile(r"(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]")
+
+# 中文日期只有月日、没有年份：按"离今天最近的那一天"推断。
+# 半年以上的回退一律算跨年（12 月写"1 月 5 日"说的是明年）。
+YEAR_ROLL_DAYS = 180
 
 
 def _txt(v):
     return "" if v is None else str(v).strip()
 
 
+def _col_name(n):
+    """列号 → 列名：27 → AA（以前用 chr(64+n)，第 27 列就变成乱码）。"""
+    out = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        out = chr(65 + rem) + out
+    return out
+
+
 def _loc(sheet, headers, head, row):
     """体检报告里的位置，形如 订单!D4。"""
     col = headers.index(head) + 1 if head in headers else 1
-    return f"{sheet}!{chr(64 + col)}{row}"
+    return f"{sheet}!{_col_name(col)}{row}"
+
 
 
 def _issue(issues, category, where, symptom, action, need_confirm=False):
@@ -39,15 +55,18 @@ def _issue(issues, category, where, symptom, action, need_confirm=False):
 # ---------------- 单号 ----------------
 
 def normalize_order_no(value):
-    """三种写法归一：HD-2026-101 / HD2026102 / 104 → HD-2026-1xx。"""
+    """三种写法归一：HD-2026-101 / HD2026102 / 104 → HD-<年>-1xx。
+
+    年份从数据本身取，取不到才用当年。以前写死 2026：
+    客户下一年的单（HD-2027-101）会被改成 HD-2026-101，直接串到去年的单上。
+    """
     s = _txt(value)
     digits = DIGITS_RE.sub("", s)
-    if len(digits) == 7 and digits.startswith("2026"):
-        return f"HD-2026-{digits[-3:]}"
+    year = digits[:4] if len(digits) >= 7 else str(date.today().year)
     if len(digits) == 3:
-        return f"HD-2026-{digits}"
+        return f"HD-{year}-{digits}"
     if len(digits) > 3:
-        return f"HD-2026-{digits[-3:]}"
+        return f"HD-{year}-{digits[-3:]}"
     return s
 
 
@@ -81,7 +100,7 @@ def parse_date(value):
         return value.date()
     if isinstance(value, date):
         return value
-    s = _txt(value).replace(" ", "")
+    s = _txt(value)
     if not s:
         return None
     m = ISO_RE.match(s)
@@ -91,8 +110,20 @@ def parse_date(value):
     m = CN_RE.match(s)
     if m:
         mo, d = (int(x) for x in m.groups())
-        return _safe_date(2026, mo, d)     # 台账全部是 2026 年，跨年需客户补年份
+        return _cn_date(mo, d, None)
     return None
+
+
+def _cn_date(month, day, recv):
+    """只有月日的日期 → 具体年份：取接单年/当年，落得太久远就顺延一年。"""
+    today = date.today()
+    base_year = recv.year if recv else today.year
+    for year in (base_year, base_year + 1):
+        got = _safe_date(year, month, day)
+        if got and (got - today).days > -YEAR_ROLL_DAYS:
+            return got
+    return _safe_date(base_year, month, day)
+
 
 
 def _safe_date(y, m, d):
@@ -122,7 +153,7 @@ def parse_due(value, recv):
     text = _txt(value)
     if not text:
         return None, "", True
-    exact = parse_date(text)
+    exact = parse_date(value)          # 传原值：Excel 真日期要按 datetime 认，别先转成字符串
     if exact:
         return exact, "", False
     for key, (_, days) in config.DUE_TEXT_RULES.items():
@@ -176,7 +207,7 @@ def _recv_issue(rec, headers, issues):
         _issue(issues, "接单日期", loc, "接单日期为空", "标需客户确认，交期按原文处理", True)
     elif parsed is None:
         _issue(issues, "接单日期", loc, f"原文「{raw}」无法解析", "标需客户确认", True)
-    elif not ISO_RE.match(raw.replace(" ", "")):
+    elif not ISO_RE.match(raw):
         _issue(issues, "接单日期", loc, f"格式「{raw}」", f"统一为 {parsed.isoformat()}")
 
 
@@ -194,14 +225,21 @@ def _due_issue(rec, headers, issues):
 
 
 def _parse_qty(value):
+    """数量：认「35」「35 件」「35件」「35 PCS」。
+
+    以前直接 int(float(s))，「35 件」抛 ValueError 被当成空数量，
+    整单不排产——计划员写单位是最自然的习惯，不能因此丢单。
+    """
     s = _txt(value)
-    if not s:
+    if not s or s.lstrip().startswith("-"):
         return None
-    try:
-        n = int(float(s))
-    except ValueError:
+    m = QTY_RE.search(s)
+    if not m:
         return None
-    return n if n > 0 else None
+    n = float(m.group())
+    if n <= 0:
+        return None
+    return int(n) if abs(n - round(n)) < 1e-9 else round(n, 2)
 
 
 def _order_dict(rec, oid, recv, due, qty, issues, headers):
@@ -212,7 +250,7 @@ def _order_dict(rec, oid, recv, due, qty, issues, headers):
     if urgent:
         _issue(issues, "备注规则", loc, f"备注「{remark}」", "识别为急单，排产时优先")
     qty = _half_qty(remark, qty, loc, issues)
-    ready = _material_date(remark, loc, issues)
+    ready = _material_date(remark, loc, issues, recv)
     return {"order_id": oid, "customer": _txt(rec.get("客户")), "recv": recv, "due": due,
             "due_text": _txt(rec.get("交期")), "product": _txt(rec.get("产品")),
             "qty": qty, "remark": remark, "urgent": urgent, "material_ready": ready,
@@ -228,12 +266,20 @@ def _half_qty(remark, qty, loc, issues):
     return half
 
 
-def _material_date(remark, loc, issues):
-    """备注"材料 X 月 X 日才到" → 最早开工日。"""
+def _material_date(remark, loc, issues, recv=None):
+    """备注"材料 X 月 X 日才到" → 最早开工日。
+
+    写错日期（13 月 40 日）以前直接抛 ValueError，整批排产 500。
+    现在只影响这一单：标"到料日待确认"，交给客户改，其余单照排。
+    """
     m = MATERIAL_RE.search(remark)
     if not m:
         return None
-    ready = date(2026, int(m.group(1)), int(m.group(2)))
+    ready = _cn_date(int(m.group(1)), int(m.group(2)), recv)
+    if ready is None:
+        _issue(issues, "备注规则", loc, f"备注「{remark}」里的日期不合法",
+               "到料日无法确定，按无到料约束排产", True)
+        return None
     _issue(issues, "备注规则", loc, f"备注「{remark}」", f"该单最早开工日 {ready.isoformat()}")
     return ready
 

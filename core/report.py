@@ -30,41 +30,54 @@ def _color_map(rows):
 
 # ---------------- 风险计算 ----------------
 
-def build_risks(orders, rows, skipped):
-    """算每单的预计完工、差额、卡在哪台机哪道工序。"""
+def build_risks(orders, rows, skipped, bounds=None):
+    """算每单的预计完工、差额、卡在哪台机哪道工序，以及交期可行性下界。
+
+    bounds 是"独占最快机台、零排队"的最早完工：现实只会更晚。
+    下界都赶不上交期的单，属于交期本身不可能，必须和"排得不好"分开报。
+    """
+    bounds = bounds or {}
     by_order = {}
     for r in rows:
         by_order.setdefault(r["order"], []).append(r)
-    risks = [_risk_of(od, by_order.get(od["order_id"])) for od in orders]
+    risks = [_risk_of(od, by_order.get(od["order_id"]), bounds.get(od["order_id"]))
+             for od in orders]
     risks = [r for r in risks if r]
     for item in skipped:
         od = item["order"]
         risks.append({"order": od["order_id"], "due": od["due_text"] or "—", "eta": None,
                       "gap": None, "machine": "—", "op": "—", "status": "未排产",
-                      "note": item["reason"]})
+                      "note": item["reason"], "lb": bounds.get(od["order_id"]),
+                      "infeasible": False})
     risks.sort(key=_risk_key)
     return risks
 
 
-def _risk_of(od, items):
-    """末道工序的完工时间决定这单能不能交。"""
+def _risk_of(od, items, bound):
+    """末道工序的完工时间决定这单能不能交；下界决定这交期有没有可能。"""
     if not items:
         return None
     last = max(items, key=lambda x: x["end"])
     due_dt = datetime.combine(od["due"], time(config.DUE_HOUR)) if od["due"] else None
     gap = round((due_dt - last["end"]).total_seconds() / 86400, 1) if due_dt else None
-    status, note = _risk_note(gap, due_dt, last)
+    status, note = _risk_note(gap, due_dt, last, bound)
     if od["due_text"] and not od["due_text"][:4].isdigit():
         note = f'【按口径折算：{od["due_text"]}】' + note
+    bound_gap = round((bound - due_dt).total_seconds() / 86400, 1) if (bound and due_dt) else None
     return {"order": od["order_id"],
             "due": od["due"].isoformat() if od["due"] else (od["due_text"] or "—"),
             "eta": last["end"], "gap": gap, "machine": last["machine"], "op": last["op"],
-            "status": status, "note": note}
+            "status": status, "note": note, "lb": bound, "bound_gap": bound_gap,
+            "infeasible": status == "不可行"}
 
 
-def _risk_note(gap, due_dt, last):
+def _risk_note(gap, due_dt, last, bound=None):
     if due_dt is None:
         return "需确认", "交期是文字或空白，无法确定日期"
+    if bound and bound > due_dt:
+        late = (bound - due_dt).total_seconds() / 86400
+        return "不可行", (f"独占最快机台、零排队也要 {cal.fmt(bound)} 才完工，比交期晚 {late:.1f} 天"
+                          "——交期本身不成立，只能改期或外协，不是排产能优化掉的")
     if gap < 0:
         return "迟到", f"预计晚 {abs(gap):.1f} 天，末道积压在 {last['machine']}"
     if gap < 1:
@@ -73,7 +86,7 @@ def _risk_note(gap, due_dt, last):
 
 
 def _risk_key(r):
-    rank = {"迟到": 0, "需确认": 1, "临界": 2, "按期": 3, "未排产": 4}
+    rank = {"不可行": 0, "迟到": 1, "需确认": 2, "临界": 3, "按期": 4, "未排产": 5}
     return (rank[r["status"]], r["gap"] if r["gap"] is not None else 0)
 
 
@@ -221,15 +234,19 @@ def write_risk_md(path, risks, params_line):
              "| 项目 | 数值 |", "|---|---|"]
     lines += _risk_overview(risks)
     lines += ["", "## 二、明细", "",
-              "| 单号 | 交期 | 预计完工 | 差额(天) | 卡在哪台机 | 卡在哪道工序 | 状态 | 说明 |",
-              "|---|---|---|---|---|---|---|---|"]
+              "| 单号 | 交期 | 交期下界 | 预计完工 | 差额(天) | 卡在哪台机 | 卡在哪道工序 | 状态 | 说明 |",
+              "|---|---|---|---|---|---|---|---|---|"]
     for r in risks:
         gap = "—" if r["gap"] is None else f'{r["gap"]:+.1f}'
         eta = cal.fmt(r["eta"]) if r["eta"] else "未排产"
-        lines.append(f'| {r["order"]} | {r["due"]} | {eta} | {gap} | {r["machine"]} | '
+        bound = cal.fmt(r["lb"]) if r.get("lb") else "—"
+        lines.append(f'| {r["order"]} | {r["due"]} | {bound} | {eta} | {gap} | {r["machine"]} | '
                      f'{r["op"]} | {r["status"]} | {r["note"]} |')
-    lines += ["", "## 三、合计", "", _risk_total(risks), "", "## 四、差额口径", "",
+    lines += ["", "## 三、合计", "", _risk_total(risks), "", "## 四、口径说明", "",
               f'差额 = 交期当天 {config.DUE_HOUR}:00 − 该单末道工序完工时间；负数为迟到天数，正数为余量。',
+              "交期下界 = 该单独占最快机台、前后无排队时的最早完工。它是物理极限，现实只会更晚。",
+              "下界都超过交期的单标「不可行」：这类单再怎么调顺序也来不及，只能改期、分批或外协，",
+              "　不属于排产算法能优化的范围；「迟到」才是排产没排好、还有优化空间的那部分。",
               "交期为文字（尽快 / 月底前 / 空白）的单按约定口径折算并标「需确认」，不当作准确交期。", ""]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
@@ -242,7 +259,8 @@ def _risk_overview(risks):
     worst = min((r for r in risks if r["gap"] is not None), key=lambda x: x["gap"], default=None)
     worst_txt = f'{worst["order"]}（晚 {abs(worst["gap"]):.1f} 天）' if worst and worst["gap"] < 0 else "无"
     return [f'| 参与排产订单 | {len([r for r in risks if r["status"] != "未排产"])} |',
-            f'| 迟到 | {cnt.get("迟到", 0)} |',
+            f'| 交期不可行（物理不可能） | {cnt.get("不可行", 0)} |',
+            f'| 迟到（可优化） | {cnt.get("迟到", 0)} |',
             f'| 临界（余量<1天） | {cnt.get("临界", 0)} |',
             f'| 按期 | {cnt.get("按期", 0)} |',
             f'| 交期待确认 | {cnt.get("需确认", 0)} |',
@@ -252,10 +270,18 @@ def _risk_overview(risks):
 
 def _risk_total(risks):
     late = [r for r in risks if r["status"] == "迟到"]
-    if not late:
-        return "**合计：0 单迟到。**"
-    orders = "、".join(f'{r["order"]}({r["gap"]:+.1f}d)' for r in late)
-    return f'**合计：{len(late)} 单迟到 → {orders}**'
+    hopeless = [r for r in risks if r["status"] == "不可行"]
+    parts = []
+    if hopeless:
+        orders = "、".join(f'{r["order"]}({r["bound_gap"]:+.1f}d)' if r["bound_gap"] is not None
+                           else r["order"] for r in hopeless)
+        parts.append(f'**交期不可行 {len(hopeless)} 单（改期/外协，非排产问题）→ {orders}**')
+    if late:
+        orders = "、".join(f'{r["order"]}({r["gap"]:+.1f}d)' for r in late)
+        parts.append(f'**迟到（可优化）{len(late)} 单 → {orders}**')
+    if not parts:
+        return "**合计：0 单迟到，0 单交期不可行。**"
+    return "　".join(parts)
 
 
 # ---------------- ④ 体检报告 md ----------------

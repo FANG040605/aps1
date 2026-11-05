@@ -5,7 +5,7 @@ CLI（run.py）和网页（web/app.py）都调这一个函数：
 """
 
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 import config
 from . import calendar_util as cal
@@ -15,15 +15,41 @@ KINDS = {"schedule": ("排单表.xlsx", "schedule"), "gantt": ("甘特图.html",
          "risk": ("风险清单.md", "risk"), "checkup": ("体检报告.md", "checkup")}
 
 
-def default_start(orders):
-    """起始日默认取最近周一：今天和最早接单日里更晚的那个。
+def default_start(orders, now=None):
+    """起始日默认取"现在之后第一个能开工的时刻"，不再无脑跳到下周一。
 
-    _as_date 是道保险：哪怕上游哪天又漏了个 datetime 进来，
-    也不会因为 date 和 datetime 混着比而整条链路崩掉。
+    以前默认跳到最近周一：周四下午点排产，明后天（周五、周六）的产能直接被扔掉，
+    同一批台账从周四起排是 4 单迟到，拖到下周一就变成 10 单——工具自己制造迟到。
+    现在只在两种情况下才往后挪：现在已过今日收工时刻，或所有订单都还没接到。
+
+    注意取的是最早的接单日，不是最晚的：最晚那个会把整批计划拖到"最后一张单
+    接到的那天"，前面几天白白空着。单张单不能早于自己接单日开工，
+    这件事由 instance 的 _earliest 逐单兜住，不需要在起始日上下狠手。
     """
+    now = now or datetime.now()
     recv = [_as_date(o["recv"]) for o in orders if o["recv"]]
-    base = max([date.today()] + recv) if recv else date.today()
-    return cal.next_monday(base)
+    if not recv:
+        return cal.ceil_to_work(now, config.DEFAULT_SHIFTS_PER_DAY)
+    first = min(recv)
+    anchor = now if first <= now.date() else datetime.combine(first, time.min).replace(hour=config.DAY_START_HOUR)
+    return cal.ceil_to_work(anchor, config.DEFAULT_SHIFTS_PER_DAY)
+
+
+def _resolve_start(start, orders, issues, now):
+    """确定本次排产的起始时刻，并挡住"从过去开始排"这种一眼假的计划。"""
+    if start is None:
+        return default_start(orders, now)
+    if start < now:
+        fixed = cal.ceil_to_work(now, config.DEFAULT_SHIFTS_PER_DAY)
+        issues.append({
+            "category": "起始日校验", "where": "参数·起始日",
+            "symptom": f"指定起始 {cal.fmt_full(start)} 早于当前时刻 {cal.fmt_full(now)}",
+            "action": f"已改为 {cal.fmt_full(fixed)}，避免排出已经过去的开工时刻",
+            "need_confirm": False,
+        })
+        return fixed
+    return cal.ceil_to_work(start, config.DEFAULT_SHIFTS_PER_DAY)
+
 
 
 def _as_date(value):
@@ -42,11 +68,12 @@ def build_params(start_dt, allow_switch, machines):
     idle = "、".join(m["code"] for m in machines.values() if "闲置" in m["status"]) or "无"
     return (f'起始 {cal.fmt_full(start_dt)} ｜ 每班 {config.HOURS_PER_SHIFT}h，班制 {shifts}'
             f' ｜ 周日不排 ｜ 交期当天 {config.DUE_HOUR}:00 ｜ 工时 {config.TIME_UNIT}×数量'
+            f' ｜ 目标 迟到单数→迟到天数→总完工'
             f' ｜ 换机台 {"允许" if allow_switch else "不允许"} ｜ 数量空白 不排产'
             f' ｜ 停机 {down} ｜ 外协 {out} 不计产能 ｜ 闲置 {idle} 可启用')
 
 
-def run_pipeline(xlsx_path, out_dir, start=None, allow_switch=True):
+def run_pipeline(xlsx_path, out_dir, start=None, allow_switch=True, now=None):
     """跑完整条链，产物写到 out_dir，返回全部中间结果供 CLI / JSON 使用。"""
     data = reader.read_workbook(xlsx_path)
     clean, issues = cleaner.clean_all(data)
@@ -54,19 +81,27 @@ def run_pipeline(xlsx_path, out_dir, start=None, allow_switch=True):
         raise reader.WorkbookError("「订单」表里没有读到数据行，请检查是不是空表或表头被删了")
     if not clean["routes"]:
         raise reader.WorkbookError("「工艺路线」表里没有产品，算不出工序，请检查该表")
-    start_dt = start or default_start(clean["orders"])
+    now = now or datetime.now()
+    start_dt = _resolve_start(start, clean["orders"], issues, now)
     machines = {m["code"]: m for m in clean["machines"]}
     tasks, skipped, more = inst.load_instance(clean, allow_switch, start_dt)
     issues += more
-    result = solver.schedule(tasks, machines, start_dt)
-    violations = checker.check(tasks, result["rows"], machines)
+    try:
+        result = solver.schedule(tasks, machines, start_dt)
+    except RuntimeError as exc:                 # 求解器兜底：宁可报清楚，也不要 500 堆栈
+        raise reader.WorkbookError(f"排产失败：{exc}。请检查「设备」表里这些工序有没有可用机台") from exc
+    violations = checker.check(tasks, result["rows"], machines, start_dt,
+                               orders=clean["orders"], skipped=skipped)
+    bounds = solver.lower_bounds(tasks, machines, start_dt)
     params = build_params(start_dt, allow_switch, machines)
-    risks = report.build_risks(clean["orders"], result["rows"], skipped)
+    risks = report.build_risks(clean["orders"], result["rows"], skipped, bounds)
     paths = _write(out_dir, result, risks, issues, params, start_dt, len(clean["orders"]))
     return {"rows": result["rows"], "tasks": tasks, "skipped": skipped, "issues": issues,
             "violations": violations, "risks": risks, "params": params, "start": start_dt,
             "makespan": result["makespan"], "rule": result["rule"], "paths": paths,
-            "machines": machines, "orders": clean["orders"]}
+            "machines": machines, "orders": clean["orders"], "bounds": bounds,
+            "search": {"evals": result.get("evals", 0), "moves": result.get("moves", 0)}}
+
 
 
 def _write(out_dir, result, risks, issues, params, start_dt, n_orders):
@@ -104,17 +139,21 @@ def payload(run, job_id):
 
 def _metrics(run):
     late = len([r for r in run["risks"] if r["status"] == "迟到"])
+    hopeless = len([r for r in run["risks"] if r["status"] == "不可行"])
     need = len([i for i in run["issues"] if i["need_confirm"]])
     return [
         {"k": "读入订单", "v": len(run["orders"]), "u": "条", "s": f'排产 {len({r["order"] for r in run["rows"]})} 单'},
         {"k": "工序任务", "v": len(run["rows"]), "u": "道", "s": "分钟/件 × 数量"},
         {"k": "总完工", "v": run["makespan"].strftime("%m-%d"), "u": run["makespan"].strftime("%H:%M"),
          "s": f"规则 {run['rule']} 最优"},
-        {"k": "校验违反", "v": len(run["violations"]), "u": "项", "s": "四条硬约束", "tone": "ok" if not run["violations"] else "bad"},
-        {"k": "迟到订单", "v": late, "u": "单", "s": "见风险清单", "tone": "bad" if late else "ok"},
+        {"k": "校验违反", "v": len(run["violations"]), "u": "项", "s": "五条硬约束", "tone": "ok" if not run["violations"] else "bad"},
+        {"k": "迟到订单", "v": late, "u": "单",
+         "s": f"另 {hopeless} 单交期物理不可能" if hopeless else "见风险清单",
+         "tone": "bad" if (late or hopeless) else "ok"},
         {"k": "数据问题", "v": len(run["issues"]), "u": "条",
          "s": f"{len({i['category'] for i in run['issues']})} 类，{need} 条待确认", "tone": "warn"},
     ]
+
 
 
 def _schedule_row(r):
@@ -157,4 +196,6 @@ def _risk(r):
     return {"order": r["order"], "due": r["due"],
             "eta": cal.fmt(r["eta"]) if r["eta"] else "未排产",
             "gap": None if r["gap"] is None else round(r["gap"], 1),
-            "machine": r["machine"], "op": r["op"], "status": r["status"], "note": r["note"]}
+            "machine": r["machine"], "op": r["op"], "status": r["status"], "note": r["note"],
+            "lb": cal.fmt(r["lb"]) if r.get("lb") else "—",
+            "infeasible": bool(r.get("infeasible"))}

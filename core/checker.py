@@ -1,27 +1,40 @@
-"""四条硬约束校验：不重不漏 / 机台与工时一致 / 不倒序 / 不重叠。
+"""五条硬约束校验：不重不漏 / 机台与工时一致 / 不倒序 / 不重叠 / 不早于可开工时刻。
 
 这个文件是整个项目的地基，必须满足两条：
 1) 它不调用求解器、不读求解器的中间状态，只拿"任务清单 + 排程结果"重新算一遍；
 2) 它不经过任何 AI，只认约束和算术。同样的输入永远给同样的结论。
 
-返回 violations 列表，每条含 code（C1~C4）与 detail；空列表 = 0 违反。
+为什么会有 C5：C1~C4 都只查"排得对不对"，没查"能不能排在这儿"。
+以前把一道工序整体提前 10 天（早于接单日），机台不撞、工时自洽、顺序不乱，
+四条约束全部通过——这种表拿去车间，计划员一眼就看出"活还没接就开工了"，
+但工具说自己 0 违反。C5 补的就是这一条。
+
+返回 violations 列表，每条含 code（C1~C5）与 detail；空列表 = 0 违反。
 """
 
+from datetime import datetime
+
+import config
 from . import calendar_util as cal
 
 TOL = 1.5          # 分钟容差，容忍浮点误差
-C1, C2, C3, C4 = "C1 不重不漏", "C2 机台与工时", "C3 工序倒序", "C4 机台重叠"
+C1, C2, C3, C4, C5 = ("C1 不重不漏", "C2 机台与工时", "C3 工序倒序",
+                      "C4 机台重叠", "C5 早于可开工时刻")
 
 
-def check(tasks, rows, machines):
-    """跑完四条约束，返回全部违反项。"""
+def check(tasks, rows, machines, start_dt=None, orders=None, skipped=None):
+    """跑完五条约束，返回全部违反项。
+
+    orders / skipped 传进来时，C1 才能抓到"整单凭空消失"——
+    只拿 tasks 当期望值的话，tasks 少了一整单，C1 反而查不出来（自我印证）。
+    """
     expect = {(t["order_id"], t["seq"]): t for t in tasks}
-    return (_c1(expect, rows) + _c2(expect, rows, machines)
-            + _c3(rows) + _c4(rows))
+    return (_c1(expect, rows, orders, skipped) + _c2(expect, rows, machines)
+            + _c3(rows) + _c4(rows) + _c5(expect, rows, start_dt))
 
 
-def _c1(expect, rows):
-    """每道工序恰好排一次：漏排、重排、数量对不上都要抓。"""
+def _c1(expect, rows, orders=None, skipped=None):
+    """每道工序恰好排一次：漏排、重排、数量对不上、整单失踪都要抓。"""
     v, seen = [], {}
     for r in rows:
         key = (r["order"], r["seq"])
@@ -36,7 +49,19 @@ def _c1(expect, rows):
             v.append({"code": C1, "detail": f"{key[0]} 第 {key[1]} 道：漏排"})
     if len(rows) != len(expect):
         v.append({"code": C1, "detail": f"排程条数 {len(rows)} ≠ 应排工序数 {len(expect)}"})
+    v += _c1_vanished(rows, orders, skipped)
     return v
+
+
+def _c1_vanished(rows, orders, skipped):
+    """应排的订单没出现在结果里，且不在"已跳过"名单——属于静默丢失。"""
+    if orders is None:
+        return []
+    planned = {r["order"] for r in rows}
+    skipped_ids = {s["order"]["order_id"] for s in (skipped or [])}
+    return [{"code": C1, "detail": f'{od["order_id"]} 整单未出现在排程结果里（也不在未排产清单）'}
+            for od in orders
+            if od["order_id"] not in planned and od["order_id"] not in skipped_ids]
 
 
 def _c2(expect, rows, machines):
@@ -96,9 +121,38 @@ def _c4(rows):
     return v
 
 
+def _c5(expect, rows, start_dt):
+    """每道工序不得早于"可开工时刻"：起始日、接单日、到料日三者取最晚。
+
+    期望值从任务的原始字段重新算，不读任务里的 earliest，
+    否则 instance 算错了，checker 跟着一起错，等于没查。
+    """
+    v = []
+    for r in rows:
+        task = expect.get((r["order"], r["seq"]))
+        if task is None:
+            continue
+        floor = _floor(task, start_dt)
+        if floor and r["start"] < floor:
+            v.append({"code": C5,
+                      "detail": f'{r["order"]} 第 {r["seq"]} 道「{r["op"]}」开工 {cal.fmt(r["start"])} '
+                                f'早于可开工时刻 {cal.fmt(floor)}'})
+    return v
+
+
+def _floor(task, start_dt):
+    """可开工时刻 = max(起始日, 接单日 08:00, 到料日 08:00)。"""
+    cands = [start_dt] if start_dt else []
+    for key in ("recv", "material_ready"):
+        day = task.get(key)
+        if day:
+            cands.append(datetime.combine(day, datetime.min.time()).replace(hour=config.DAY_START_HOUR))
+    return max(cands) if cands else None
+
+
 def summary(violations):
     """按约束汇总，给报表和命令行用。"""
-    out = {C1: 0, C2: 0, C3: 0, C4: 0}
+    out = {C1: 0, C2: 0, C3: 0, C4: 0, C5: 0}
     for item in violations:
         out[item["code"]] = out.get(item["code"], 0) + 1
     return out

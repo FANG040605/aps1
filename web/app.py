@@ -81,7 +81,7 @@ class Handler(BaseHTTPRequestHandler):
             f.write(data)
         start = _parse_day(fields.get("start_date"))
         allow = fields.get("allow_switch", "true") != "false"
-        with LOCK:                                   # 排程是同步的，串行更稳，单次 0.1s
+        with LOCK:                                   # 排程是同步的，串行更稳，单次约 2~3s（含交期局部搜索）
             run = pipeline.run_pipeline(src, work, start, allow)
         payload = pipeline.payload(run, job_id)
         payload["summary"] = _summary(run)

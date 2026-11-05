@@ -7,7 +7,7 @@ from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.instance import _earliest, resolve_machines  # noqa: E402
+from core.instance import _earliest, load_instance, resolve_machines  # noqa: E402
 
 MACHINES = [
     {"code": "CNC-01", "ops": ["铣"], "usable": True},
@@ -71,3 +71,39 @@ class TestEarliest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNoMachineDegrade(unittest.TestCase):
+    """一道工序找不到机台，只能让这一单不排，绝不能拖垮整批。
+
+    以前的做法是记一条 issue，然后把"机台候选为空"的任务继续传给求解器，
+    求解器一抛 RuntimeError，14 张单全部出不来。
+    """
+
+    def _clean(self, machines):
+        return {
+            "orders": [{"order_id": "HD-X-001", "product": "P", "qty": 10, "recv": date(2026, 11, 3),
+                        "due": None, "due_text": "", "urgent": False, "material_ready": None,
+                        "customer": "甲", "remark": "", "row": 3}],
+            "machines": machines,
+            "routes": [{"product": "P", "steps": [{"op": "磨", "machine": "GRD-01", "minutes": 10}],
+                        "total": 10}],
+        }
+
+    def test_no_machine_skips_order_instead_of_raising(self):
+        machines = [{"code": "LAT-01", "ops": ["车"], "shifts": 2, "usable": True, "status": "在用"}]
+        tasks, skipped, issues = load_instance(self._clean(machines), True, datetime(2026, 11, 9, 8))
+        self.assertEqual(tasks, [], "无机台的工序不能变成空机台任务")
+        self.assertEqual(len(skipped), 1)
+        self.assertIn("磨", skipped[0]["reason"])
+
+    def test_issue_is_marked_need_confirm(self):
+        machines = [{"code": "LAT-01", "ops": ["车"], "shifts": 2, "usable": True, "status": "在用"}]
+        _, _, issues = load_instance(self._clean(machines), True, datetime(2026, 11, 9, 8))
+        self.assertTrue(any(i["need_confirm"] for i in issues), "缺机台必须标需客户确认")
+
+    def test_normal_order_still_planned(self):
+        machines = [{"code": "GRD-01", "ops": ["磨"], "shifts": 2, "usable": True, "status": "在用"}]
+        tasks, skipped, _ = load_instance(self._clean(machines), True, datetime(2026, 11, 9, 8))
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(skipped, [])

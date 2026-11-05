@@ -10,7 +10,7 @@ from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.cleaner import _dedupe, normalize_order_no, parse_date, parse_due  # noqa: E402
+from core.cleaner import _dedupe, _parse_qty, normalize_order_no, parse_date, parse_due  # noqa: E402
 from core.pipeline import default_start  # noqa: E402
 
 
@@ -92,11 +92,69 @@ class TestExcelDateType(unittest.TestCase):
         self.assertEqual(max(mixed), date(2026, 11, 8))
 
     def test_default_start_survives_datetime(self):
-        """即使上游漏了 datetime 进来，起始日计算也不能崩。"""
+        """即使上游漏了 datetime 进来，起始日计算也不能崩，且必须仍是 datetime。"""
         orders = [{"recv": date(2026, 11, 3)}, {"recv": datetime(2026, 11, 9, 8, 0)}]
-        # 返回值是"当天 08:00"的 datetime，不是纯日期
-        self.assertEqual(default_start(orders), datetime(2026, 11, 9, 8, 0))
+        got = default_start(orders, now=datetime(2026, 11, 5, 15, 10))
+        self.assertIsInstance(got, datetime)
+        self.assertGreaterEqual(got, datetime(2026, 11, 5, 15, 10), "不能排到过去")
+
+    def test_future_order_does_not_drag_whole_plan(self):
+        """一张 11-09 才接的单，不能把整批计划拖到 11-09 才开工。"""
+        orders = [{"recv": date(2026, 11, 3)}, {"recv": date(2026, 11, 9)}]
+        got = default_start(orders, now=datetime(2026, 11, 5, 9, 30))
+        self.assertEqual(got, datetime(2026, 11, 5, 9, 30))
+
+    def test_all_orders_not_yet_received(self):
+        """整批单都还没接到（全在未来），才按最早接单日开工。"""
+        orders = [{"recv": date(2026, 11, 9)}, {"recv": date(2026, 11, 12)}]
+        got = default_start(orders, now=datetime(2026, 11, 5, 9, 30))
+        self.assertEqual(got, datetime(2026, 11, 9, 8, 0))
+
+    def test_before_shift_starts_waits_for_morning(self):
+        """凌晨 00:30 点排产，2 班制还没开工，起始推到当天 08:00。"""
+        got = default_start([], now=datetime(2026, 11, 5, 0, 30))
+        self.assertEqual(got, datetime(2026, 11, 5, 8, 0))
+
+    def test_sunday_rolls_to_monday(self):
+        """周日不排产，起始推到周一 08:00。"""
+        got = default_start([], now=datetime(2026, 11, 8, 10, 0))
+        self.assertEqual(got, datetime(2026, 11, 9, 8, 0))
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestQty(unittest.TestCase):
+    """数量列：带单位不能当空数量，负数不能当正数。"""
+
+    def test_unit_suffix_is_tolerated(self):
+        for text in ("35", "35 件", "35件", "35 PCS", "约 35 个"):
+            self.assertEqual(_parse_qty(text), 35, f"「{text}」应该读成 35")
+
+    def test_blank_and_zero_are_missing(self):
+        for text in ("", None, "0", "待定"):
+            self.assertIsNone(_parse_qty(text))
+
+    def test_negative_is_rejected(self):
+        self.assertIsNone(_parse_qty("-5"))
+
+
+class TestYearNotHardcoded(unittest.TestCase):
+    """年份不能写死 2026：跨年台账会把明年的单串到今年。"""
+
+    def test_order_no_keeps_its_own_year(self):
+        self.assertEqual(normalize_order_no("HD-2027-101"), "HD-2027-101")
+        self.assertEqual(normalize_order_no("HD2027101"), "HD-2027-101")
+
+    def test_short_form_uses_current_year(self):
+        self.assertEqual(normalize_order_no("105"), f"HD-{date.today().year}-105")
+
+    def test_chinese_due_accepts_hao(self):
+        self.assertEqual(parse_date("11月12号"), date(2026, 11, 12))
+
+    def test_excel_datetime_string_still_parses(self):
+        """交期列被 Excel 存成真日期后，读出来是「2026-11-22 00:00:00」这种字符串。"""
+        self.assertEqual(parse_date("2026-11-22 00:00:00"), date(2026, 11, 22))
+        self.assertEqual(parse_due(datetime(2026, 11, 22, 0, 0), date(2026, 11, 3))[0],
+                         date(2026, 11, 22))

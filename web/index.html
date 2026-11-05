@@ -375,19 +375,24 @@ function renderGantt(g){
 
 function renderRisks(rs){
   const body = rs.map(r => {
-    const cls = r.status === "迟到" ? "late" : "";
+    const cls = (r.status === "迟到" || r.status === "不可行") ? "late" : "";
     const gap = r.gap === null ? '<span class="dim">—</span>'
       : `<span class="${r.gap < 0 ? 'gap' : ''}">${r.gap > 0 ? "+" : ""}${r.gap}</span>`;
+    const lb = r.lb && r.lb !== "—" ? `<span class="${r.infeasible?'gap':''}">${r.lb}</span>`
+      : '<span class="dim">—</span>';
     return `<tr class="${cls}"><td class="mono">${r.order}</td><td class="mono">${r.due}</td>
+      <td class="mono">${lb}</td>
       <td class="mono ${r.eta==='未排产'?'dim':''}">${r.eta}</td><td class="num">${gap}</td>
       <td>${r.machine==='—'?'<span class="dim">—</span>':'<span class="mc">'+r.machine+'</span>'}</td>
       <td>${r.op}</td><td>${r.status}</td><td style="white-space:normal">${r.note}</td></tr>`;
   }).join("");
   const late = rs.filter(r => r.status === "迟到").length;
-  $("#panel-risk").innerHTML = `<table><thead><tr><th>单号</th><th>交期</th><th>预计完工</th>
+  const bad = rs.filter(r => r.status === "不可行").length;
+  $("#panel-risk").innerHTML = `<table><thead><tr><th>单号</th><th>交期</th><th>交期下界</th><th>预计完工</th>
     <th class="num">差额(天)</th><th>卡在哪台机</th><th>卡在哪道工序</th><th>状态</th><th>说明</th>
     </tr></thead><tbody>${body}</tbody></table>
-    <div class="hint">合计 ${rs.length} 单：<b>${late} 单迟到</b>；差额 = 交期当天 17:00 − 末道工序完工，负数即迟到天数。</div>`;
+    <div class="hint">合计 ${rs.length} 单：<b>${late} 单迟到（可优化）</b>、<b>${bad} 单交期不可行（改期/外协）</b>。
+      差额 = 交期当天 17:00 − 末道工序完工，负数即迟到天数；交期下界 = 独占最快机台、零排队的最早完工，是物理极限。</div>`;
 }
 
 function renderCheckup(issues, violations){

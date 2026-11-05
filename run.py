@@ -30,7 +30,11 @@ def _report(run, elapsed):
     print("本次参数：" + run["params"])
     print(f"工序任务 {len(run['tasks'])} 道 ｜ 参与排产 {len({t['order_id'] for t in run['tasks']})} 单"
           f" ｜ 未排产 {len(run['skipped'])} 单 ｜ 总完工 {run['makespan']:%Y-%m-%d %H:%M}")
-    print(f"规则对比：{run['rule']} 最优（FIFO / SPT / MWKR 各排一遍取最短）")
+    late = [r for r in run["risks"] if r["status"] == "迟到"]
+    bad = [r for r in run["risks"] if r["status"] == "不可行"]
+    print(f"规则对比：{run['rule']} 最优（{' / '.join(config.DISPATCH_RULES)} 各排一遍，"
+          f"再局部交换 {run['search']['moves']} 次，共评估 {run['search']['evals']} 次）")
+    print(f"交期：迟到（可优化）{len(late)} 单 ｜ 交期不可行（改期/外协）{len(bad)} 单")
     print("校验：" + " ｜ ".join(f"{k} {v}" for k, v in sum4.items())
           + ("  → 通过" if not run["violations"] else "  → 未通过"))
     for v in run["violations"][:10]:
@@ -45,7 +49,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="宏达精密 · 本地排产助手")
     ap.add_argument("xlsx", help="客户台账 .xlsx")
     ap.add_argument("--out", default="out", help="产物输出目录")
-    ap.add_argument("--start", default=None, help="起始日 YYYY-MM-DD，默认最近周一")
+    ap.add_argument("--start", default=None, help="起始日 YYYY-MM-DD，默认现在之后第一个可开工时刻")
     ap.add_argument("--no-switch", action="store_true", help="不允许同组换机台")
     args = ap.parse_args(argv)
     t0 = clock.time()

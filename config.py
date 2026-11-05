@@ -22,8 +22,19 @@ DUE_HOUR = 17
 # 工时单位：工艺路线里的数字是「分钟/件」，批量必须乘数量
 TIME_UNIT = "分钟/件"
 
-# 排程规则候选，三套各算一遍，取总完工最短的
-DISPATCH_RULES = ("FIFO", "SPT", "MWKR")
+# 排程规则候选：6 套各算一遍，按"迟到单数 → 迟到天数 → 总完工"取最优
+# FIFO 按接单日、SPT 短单优先、MWKR 长单优先、EDD 交期优先、EDD+SPT 交期相同看单量、ATC 交期紧迫度加权
+DISPATCH_RULES = ("FIFO", "SPT", "MWKR", "EDD", "EDD+SPT", "ATC")
+
+# ATC 的 k 值：越大越不看重交期紧迫度。1.0 是文献里的常用折中
+ATC_K = 1.0
+
+# 局部改进的评估次数预算（不按秒计时，否则机器快慢会让结果不一样）
+# 基准 1200 次 @ 51 道工序约 2.5 秒；工序变多时按比例缩小，保证总耗时可控
+LOCAL_SEARCH_EVALS = 1200
+LOCAL_SEARCH_MIN_EVALS = 120
+LOCAL_SEARCH_REF_TASKS = 51
+
 
 # ---- 交期文字的保守口径 ----
 # 台账「交期」列是人话，不是日期列。能按常识推的按下面这张表推，
