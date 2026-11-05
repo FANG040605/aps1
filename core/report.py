@@ -114,14 +114,14 @@ def write_schedule_xlsx(path, rows, params_line, title):
     wb.save(path)
 
 
-def _sheet_head(ws, title, params_line, cols):
+def _sheet_head(ws, title, params_line, cols, widths=None):
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(cols))
     c = ws.cell(1, 1, title)
     c.font = Font(size=14, bold=True)
     ws.row_dimensions[1].height = 26
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(cols))
     ws.cell(2, 1, "本次参数：" + params_line).font = Font(size=9, color="475569")
-    widths = [12, 15, 8, 7, 13, 13, 11, 9]
+    widths = widths or [12, 15, 8, 7, 13, 13, 11, 9]
     for j, name in enumerate(cols, start=1):
         cell = ws.cell(3, j, name)
         cell.font = Font(bold=True, color="FFFFFF")
@@ -295,6 +295,7 @@ def write_checkup_md(path, issues, stats, params_line):
              "| 项目 | 数值 |", "|---|---|",
              f'| 订单行数（清洗后） | {stats["orders"]} |',
              f'| 参与排产订单 | {stats["planned"]} |',
+             f'| 退回待补充 | {stats.get("rollback", 0)} 单 |',
              f'| 工序任务数 | {stats["tasks"]} |',
              f'| 体检条目 | {len(issues)} 条 |',
              f'| 问题类别 | {len(groups)} 类 |',
@@ -327,3 +328,42 @@ def _checkup_block(idx, cat, items):
     for i in items:
         rows.append(f'| {i["where"]} | {i["symptom"]} | {i["action"]} | {"是" if i["need_confirm"] else "否"} |')
     return [head] + rows + [""]
+
+
+# ---------------- ⑤ 待补充订单 ----------------
+
+ROLLBACK_COLS = ["单号", "客户", "产品", "数量", "交期", "接单日",
+                 "卡在哪", "怎么改", "原表位置"]
+ROLLBACK_WIDTHS = [16, 12, 10, 8, 13, 12, 40, 52, 14]
+
+
+def write_rollback_xlsx(path, items, orders=None):
+    """待补充订单：这次没排上的单，逐条写清卡在哪、该怎么改。
+
+    为什么单独出一张表，而不是塞进排单表：
+    排单表是给车间照着干活的，混进"这单还没法排"会让班组长以为有活干。
+    这张表是给计划员改数据的，改完把这张表当订单表传回来就能接着排——
+    所以前几列的列名和列序与订单表一致（单号/客户/产品/数量/交期/接单日），
+    后三列才是"卡在哪 / 怎么改 / 原表位置"这三句说明书。
+    """
+    _ensure(path)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "待补充"
+    note = (f"共 {len(items)} 单需要先补数据才能排产；补齐后把这张表当订单传回来即可"
+            if items else "本次没有需要补充的订单，全部订单都已进入排产")
+    _sheet_head(ws, f"待补充订单（{len(items)} 单）", note, ROLLBACK_COLS, ROLLBACK_WIDTHS)
+    if not items:
+        ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=len(ROLLBACK_COLS))
+        c = ws.cell(4, 1, "本次没有需要补充的订单")
+        c.font = Font(size=11, color="16A34A")
+        wb.save(path)
+        return
+    for i, it in enumerate(items, start=4):
+        vals = [it["order"], it["customer"], it["product"], it["qty"],
+                it["due"], it["recv"], it["reason"], it["fix"], it["where"]]
+        for j, v in enumerate(vals, start=1):
+            cell = ws.cell(i, j, v)
+            cell.border = _thin()
+            cell.alignment = Alignment(vertical="top", wrap_text=(j in (7, 8)))
+    wb.save(path)

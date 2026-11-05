@@ -127,6 +127,32 @@
          color:var(--sub);font-size:13px;margin-bottom:16px}
   #empty b{color:var(--ink);font-size:14px}
   .ghost2{display:none}
+
+  /* 产线状态 */
+  .line{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
+  .mc-btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;
+          font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit}
+  .mc-btn:hover{border-color:#93b4f8}
+  .mc-btn i{width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block}
+  .mc-btn.off{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+  .mc-btn.off i{background:#ef4444}
+  .mc-btn em{font-style:normal;color:var(--sub);font-size:11.5px}
+  .fault{display:none;margin-top:10px;padding:12px;border:1px solid #fecaca;background:#fff7f7;
+         border-radius:10px;gap:8px;flex-direction:column}
+  .fault.on{display:flex}
+  .fault input{border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;
+               font-family:inherit;width:100%;box-sizing:border-box}
+  .fault .row{display:flex;gap:8px}
+  .fault .row > *{flex:1}
+  .fault .row > button{flex:0 0 auto;padding:0 14px;border-radius:7px;border:1px solid var(--line);
+                       background:#fff;cursor:pointer;font-family:inherit;font-size:13px}
+  .fault .row > button.go{background:#dc2626;border-color:#dc2626;color:#fff}
+  /* 待补充订单 */
+  .rollbar{display:none;margin-bottom:14px;padding:12px 14px;border-radius:10px;
+           border:1px solid #fcd34d;background:#fffbeb;font-size:13px;color:#92400e}
+  .rollbar.on{display:block}
+  .rollbar b{color:#78350f}
+  .rollbar a{color:#b45309}
 </style>
 </head>
 <body>
@@ -138,14 +164,37 @@
 <div class="wrap">
   <div class="alert err" id="err"><span>✕</span><div><b id="errTitle">出错了</b><span id="errMsg"></span></div></div>
 
-  <!-- ① 上传 -->
+  <!-- ① 产线状态 -->
+  <div class="card">
+    <div class="tag">0</div>
+    <h2>产线状态 <em id="lineSummary">设备与工艺路线配一次就行，这里只管"哪台机现在不能干活"</em></h2>
+    <div class="line" id="lineList"><span class="dim">正在读取产线基线…</span></div>
+    <div class="fault" id="faultBox">
+      <div><b id="faultTitle">登记停机</b></div>
+      <div class="row">
+        <input type="datetime-local" id="faultUntil" title="预计恢复时间，留空表示归期未定">
+        <select id="faultKind" style="border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-family:inherit;font-size:13px">
+          <option value="故障">故障</option><option value="保养">计划保养</option><option value="停机">停机（其他原因）</option>
+        </select>
+      </div>
+      <input type="text" id="faultNote" placeholder="原因（选填，例如：主轴异响等配件）">
+      <div class="row">
+        <button class="go" id="faultGo">登记后重排</button>
+        <button id="faultHeal" style="display:none">机台已恢复</button>
+        <button id="faultCancel">取消</button>
+      </div>
+    </div>
+    <div class="hint" id="lineHint">点机台可以登记故障或保养；恢复时间留空表示归期未定（按整个计划期停机算）</div>
+  </div>
+
+  <!-- ② 上传 -->
   <div class="card">
     <div class="tag">1</div>
-    <h2>上传订单台账 <em>一个 .xlsx 文件，订单 / 设备 / 工艺路线三张表：分三个 sheet，或一个 sheet 里上下排三段</em></h2>
+    <h2>上传订单表 <em>日常只传订单表；设备与工艺路线用上面的产线基线，不用每天传</em></h2>
     <div class="drop" id="drop">
       <div class="ico">↑</div>
-      <b>把台账拖到这里，或点击选择文件</b>
-      <span>仅支持 .xlsx，单文件 ≤ 12 MB</span>
+      <b>把订单表拖到这里，或点击选择文件</b>
+      <span>仅支持 .xlsx，单文件 ≤ 12 MB（第一次使用要传完整台账）</span>
     </div>
     <input type="file" id="file" accept=".xlsx,.xlsm" style="display:none">
     <div class="chosen" id="chosen">
@@ -160,9 +209,9 @@
     <h2>排产参数 <em>三个参数都会写进结果里的「本次参数」行</em></h2>
     <div class="params">
       <div>
-        <label class="t">起始日（留空取最近周一）</label>
+        <label class="t">起始日（留空 = 现在之后第一个能开工的时刻）</label>
         <div class="ctl"><input type="date" id="start"></div>
-        <div class="hint">默认 2026-11-09（周一）</div>
+        <div class="hint">留空就不浪费今天剩下的产能；填了也不会排到过去</div>
       </div>
       <div>
         <label class="t">是否允许同组替换机台</label>
@@ -203,6 +252,7 @@
 
   <!-- 结果 -->
   <div id="results">
+    <div class="rollbar" id="rollbar"></div>
     <div class="card">
       <div class="tag">5</div>
       <h2>排产结果总览 <em>六张卡，一眼看出能不能按期、有没有撞机</em></h2>
@@ -212,12 +262,14 @@
         <div data-p="gantt">甘特图</div>
         <div data-p="risk">风险清单</div>
         <div data-p="checkup">体检报告</div>
+        <div data-p="rollback">待补充</div>
         <span class="dl" id="downloads"></span>
       </div>
       <div id="panel-schedule"></div>
       <div id="panel-gantt" style="display:none"></div>
       <div id="panel-risk" style="display:none"></div>
       <div id="panel-checkup" style="display:none"></div>
+      <div id="panel-rollback" style="display:none"></div>
     </div>
   </div>
 
@@ -226,7 +278,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const state = {file: null, data: null};
+const state = {file: null, data: null, profile: null};
 const PALETTE = ["#2563eb","#0d9488","#7c3aed","#db2777","#ea580c","#0891b2","#65a30d"];
 
 /* ---------- 上传 ---------- */
@@ -234,7 +286,8 @@ function pick(f){
   if(!f) return;
   if(!/\.(xlsx|xlsm)$/i.test(f.name)){
     showError("这个文件打不开，不是 Excel 台账",
-      `当前文件：${f.name}。请上传 .xlsx 文件：订单 / 设备 / 工艺路线三张表，可以分三个 sheet，也可以放在一个 sheet 里上下排三段。`);
+      `当前文件：${f.name}。请上传 .xlsx 文件。日常排产只传订单表就行；`+
+      `第一次使用要传完整台账（订单 / 设备 / 工艺路线三张表）。`);
     return;
   }
   state.file = f;
@@ -254,6 +307,102 @@ $("#file").addEventListener("change", e => pick(e.target.files[0]));
   e.preventDefault(); $("#drop").classList.remove("over");
 }));
 $("#drop").addEventListener("drop", e => pick(e.dataTransfer.files[0]));
+
+/* ---------- 产线状态（设备与工艺路线，配一次长期用） ---------- */
+async function loadProfile(){
+  try{
+    const res = await fetch("/api/profile", {cache: "no-store"});
+    if(!res.ok) throw new Error("读不到");
+    const p = await res.json();
+    state.profile = p;
+    renderLine(p);
+  }catch(e){
+    $("#lineList").innerHTML = `<span class="dim">读不到产线基线（后台服务没起来？）</span>`;
+  }
+}
+
+function renderLine(p){
+  if(!p.exists){
+    $("#lineSummary").textContent = "还没有产线基线";
+    $("#lineList").innerHTML = `<span class="dim">第一次使用：把完整台账（订单 + 设备 + 工艺路线）传一次，`+
+      `工具会自动把设备和工艺路线存成基线，之后每天只传订单表。</span>`;
+    return;
+  }
+  $("#lineSummary").textContent = p.summary + " · 更新于 " + p.updated;
+  $("#lineList").innerHTML = p.machines.map(m => {
+    const off = m.down || !m.usable;
+    const tip = m.down ? (m.down_until ? "停至 " + m.down_until : "归期未定")
+                       : (m.usable ? "可排产" : (m.status || "不可用"));
+    return `<button class="mc-btn ${off ? "off" : ""}" data-mc="${m.code}" data-down="${m.down ? 1 : 0}">
+      <i></i>${m.code}<em>${(m.ops||[]).join("/")} · ${tip}</em></button>`;
+  }).join("");
+  document.querySelectorAll("#lineList [data-mc]").forEach(b =>
+    b.addEventListener("click", () => openFault(b.dataset.mc, b.dataset.down === "1")));
+}
+
+let faultMc = null;
+function openFault(code, isDown){
+  faultMc = code;
+  $("#faultTitle").textContent = isDown ? `${code} 已停机 — 可以登记恢复` : `给 ${code} 登记停机`;
+  $("#faultUntil").value = "";
+  $("#faultNote").value = "";
+  $("#faultHeal").style.display = isDown ? "" : "none";
+  $("#faultGo").textContent = isDown ? "再登记一次停机" : "登记后重排";
+  $("#faultBox").classList.add("on");
+  $("#faultUntil").focus();
+}
+
+async function postJSON(url, body){
+  const res = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                                body: JSON.stringify(body)});
+  const d = await res.json().catch(() => ({detail: "返回内容看不懂"}));
+  if(!res.ok) throw new Error(d.detail || "操作失败");
+  return d;
+}
+
+$("#faultCancel").addEventListener("click", () => {
+  $("#faultBox").classList.remove("on");
+  faultMc = null;
+});
+
+$("#faultGo").addEventListener("click", async () => {
+  if(!faultMc) return;
+  const btn = $("#faultGo");
+  btn.disabled = true; btn.textContent = "重排中…";
+  try{
+    const d = await postJSON("/api/machine", {
+      machine: faultMc, kind: $("#faultKind").value,
+      until: $("#faultUntil").value || "", note: $("#faultNote").value});
+    $("#faultBox").classList.remove("on");
+    renderLine(d.profile);
+    $("#lineHint").textContent = `${faultMc} 已登记停机，下面按新状态重排好了。`;
+    if(state.file) await generate();          // 已经选过订单就直接重排
+  }catch(err){
+    showError("没能登记停机", err.message);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = "登记后重排";
+  }
+});
+
+$("#faultHeal").addEventListener("click", async () => {
+  if(!faultMc) return;
+  const btn = $("#faultHeal");
+  btn.disabled = true; btn.textContent = "处理中…";
+  try{
+    const d = await postJSON("/api/machine/recover", {machine: faultMc});
+    $("#faultBox").classList.remove("on");
+    renderLine(d.profile);
+    $("#lineHint").textContent = `${faultMc} 已恢复，下面按修好的状态重排好了。`;
+    if(state.file) await generate();
+  }catch(err){
+    showError("没能登记恢复", err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = "机台已恢复";
+  }
+});
+
+loadProfile();
 
 /* ---------- 提示 ---------- */
 function showError(title, msg){
@@ -296,8 +445,9 @@ async function generate(){
     render(data);
     sessionStorage.setItem("lastJob", data.job_id);
     history.replaceState(null, "", "?job=" + data.job_id);
-    $("#statusNote").textContent = "生成完成，可下载 4 个文件";
+    $("#statusNote").textContent = "生成完成，可下载 5 个文件";
     $("#elapsed").textContent = "本次用时 " + ((performance.now()-t0)/1000).toFixed(1) + " 秒";
+    loadProfile();                            // 传的是完整台账时，基线会跟着更新
   }catch(err){
     const msg = err && err.message ? err.message : String(err);
     const isNet = (err instanceof TypeError) || /Failed to fetch|NetworkError|Load failed/i.test(msg);
@@ -320,6 +470,8 @@ async function generate(){
 $("#go").addEventListener("click", generate);
 
 /* ---------- 渲染 ---------- */
+const PANELS = ["schedule","gantt","risk","checkup","rollback"];
+
 function render(d){
   state.data = d;
   $("#params").textContent = d.params;
@@ -334,15 +486,47 @@ function render(d){
   renderGantt(d.gantt);
   renderRisks(d.risks);
   renderCheckup(d.issues, d.violations);
+  renderRollback(d.rollback || []);
+  renderRollBar(d.rollback || []);
   activate((location.hash || "#schedule").slice(1));   // 支持 ?job=x#gantt 直达某个页签
+}
+
+/* 顶部那条"有 N 单没排上"的提示：不让它淹在页签里 */
+function renderRollBar(items){
+  const bar = $("#rollbar");
+  bar.classList.toggle("on", items.length > 0);
+  if(!items.length) return;
+  const names = items.slice(0, 5).map(r => r.order).join("、") + (items.length > 5 ? " 等" : "");
+  bar.innerHTML = `有 <b>${items.length} 单</b>数据不全，这次没有排产：${names}　` +
+    `<a href="javascript:activate('rollback')">看每单缺什么 →</a>　（改完把「待补充订单.xlsx」传回来即可）`;
+}
+
+function renderRollback(items){
+  if(!items.length){
+    $("#panel-rollback").innerHTML =
+      `<div class="hint" style="padding:14px 0">本次没有需要补充的订单，全部订单都已进入排产。</div>`;
+    return;
+  }
+  $("#panel-rollback").innerHTML = `<table><thead><tr>
+    <th>单号</th><th>产品</th><th class="num">数量</th><th>交期</th>
+    <th>卡在哪</th><th>怎么改</th><th>原表位置</th></tr></thead><tbody>` +
+    items.map(r => `<tr>
+      <td class="mono">${r.order}</td>
+      <td>${r.product || '<span class="dim">空</span>'}</td>
+      <td class="num">${r.qty === "" ? '<span class="dim">空</span>' : r.qty}</td>
+      <td>${r.due || '<span class="dim">空</span>'}</td>
+      <td style="white-space:normal;color:#b45309">${r.reason}</td>
+      <td style="white-space:normal">${r.fix}</td>
+      <td class="mono dim">${r.where}</td></tr>`).join("") +
+    `</tbody></table><div class="hint">这 ${items.length} 单没有排产，其余订单照常排。`+
+    `补齐后把「待补充订单.xlsx」当订单表传回来，就能接着排——不用重新整理整张台账。</div>`;
 }
 
 /* 切换页签（点上面那排，或用地址 hash 直达） */
 function activate(p){
-  if(!["schedule","gantt","risk","checkup"].includes(p)) p = "schedule";
+  if(!PANELS.includes(p)) p = "schedule";
   document.querySelectorAll("#tabs [data-p]").forEach(x => x.classList.toggle("on", x.dataset.p === p));
-  ["schedule","gantt","risk","checkup"].forEach(k =>
-    $("#panel-" + k).style.display = (k === p ? "block" : "none"));
+  PANELS.forEach(k => $("#panel-" + k).style.display = (k === p ? "block" : "none"));
 }
 
 function renderSchedule(rows){

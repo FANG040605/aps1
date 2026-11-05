@@ -30,6 +30,7 @@ from preflight import ensure_deps  # noqa: E402
 ensure_deps()  # 缺 openpyxl 时给中文提示，不甩堆栈
 
 from core import pipeline  # noqa: E402
+from core import cleaner, events, profile  # noqa: E402
 from core.reader import WorkbookError  # noqa: E402
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +49,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_file(os.path.join(ROOT, "index.html"), "text/html; charset=utf-8")
         if path == "/api/ping":
             return self._json({"ok": True, "app": "aps-scheduler"}, 200)
+        if path == "/api/profile":
+            return self._json(_profile_payload(), 200)
         if path.startswith("/api/result/"):
             return self._result(path.rsplit("/", 1)[-1])
         if path.startswith("/api/download/"):
@@ -55,23 +58,34 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"detail": "没有这个地址：" + path}, 404)
 
     def do_POST(self):
-        if urlparse(self.path).path != "/api/plan":
-            return self._json({"detail": "没有这个接口"}, 404)
+        path = urlparse(self.path).path
         try:
-            body = self._read_body()
-            fields, filename, data = _parse_upload(body, self.headers.get("Content-Type", ""))
-            job_id = self._plan(fields, filename, data)
-            self._json(JOBS[job_id]["payload"], 200)
+            if path == "/api/plan":
+                return self._plan()
+            if path == "/api/profile":
+                return self._save_profile()
+            if path == "/api/machine":
+                return self._machine_event()
+            if path == "/api/machine/recover":
+                return self._machine_recover()
+            if path == "/api/machine/undo":
+                return self._machine_undo()
+            self._json({"detail": "没有这个接口"}, 404)
         except (_Bad, WorkbookError) as e:
+            self._json({"detail": str(e)}, 400)
+        except ValueError as e:                     # 事件参数不对，话说清楚就行
             self._json({"detail": str(e)}, 400)
         except Exception as e:                      # 兜底：绝不把堆栈丢给前端
             traceback.print_exc()                   # 但黑窗口里要留全，方便顾问定位
-            self.log_error("排产失败 %r", e)
-            self._json({"detail": f"排产时出错：{type(e).__name__}。请把台账发给我们核对。"}, 500)
+            self.log_error("请求失败 %r", e)
+            self._json({"detail": f"处理时出错：{type(e).__name__}。请把这批文件发给我们核对。"}, 500)
 
     # ---------- 业务 ----------
 
-    def _plan(self, fields, filename, data):
+    def _plan(self):
+        """排产。文件里只有订单表也行——设备与工艺路线从产线基线取。"""
+        body = self._read_body()
+        fields, filename, data = _parse_upload(body, self.headers.get("Content-Type", ""))
         _check_file(filename, data)
         job_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
         work = os.path.join(JOB_ROOT, job_id)
@@ -81,13 +95,67 @@ class Handler(BaseHTTPRequestHandler):
             f.write(data)
         start = _parse_day(fields.get("start_date"))
         allow = fields.get("allow_switch", "true") != "false"
-        with LOCK:                                   # 排程是同步的，串行更稳，单次约 2~3s（含交期局部搜索）
-            run = pipeline.run_pipeline(src, work, start, allow)
+        try:
+            with LOCK:                               # 排程是同步的，串行更稳，单次约 2~3s（含交期局部搜索）
+                run = pipeline.run_pipeline(src, work, start, allow)
+        except Exception:
+            # 失败的请求不留目录：这些目录不进 JOBS，_cleanup 永远清不到，
+            # 攒下来就是一堆只有客户台账、没有结果的空壳。
+            shutil.rmtree(work, ignore_errors=True)
+            raise
         payload = pipeline.payload(run, job_id)
         payload["summary"] = _summary(run)
         JOBS[job_id] = {"payload": payload, "dir": work, "at": time.time()}
         _cleanup()
+        self._json(payload, 200)
         return job_id
+
+    def _save_profile(self):
+        """上传完整台账 → 存成产线基线（设备 + 工艺路线），之后只传订单就行。"""
+        body = self._read_body()
+        _, filename, data = _parse_upload(body, self.headers.get("Content-Type", ""))
+        _check_file(filename, data)
+        tmp = os.path.join(JOB_ROOT, "_profile_upload.xlsx")
+        os.makedirs(JOB_ROOT, exist_ok=True)
+        with open(tmp, "wb") as f:
+            f.write(data)
+        try:
+            from core import reader
+            tables = reader.read_workbook(tmp)       # 要求三张表齐全
+            profile.save(tables)
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        self._json(_profile_payload(), 200)
+
+    def _machine_event(self):
+        """登记设备故障 / 保养：{machine, kind, until, note}。"""
+        req = self._read_json()
+        machine = (req.get("machine") or "").strip()
+        kind = (req.get("kind") or "故障").strip()
+        if not machine:
+            raise _Bad("请先选一台机台")
+        until = events.parse_time(req.get("until"))
+        ev = events.add(machine, kind, until=until, note=req.get("note", ""))
+        self._json({"ok": True, "event": ev, "profile": _profile_payload()}, 200)
+
+    def _machine_recover(self):
+        """机台修好了：截断它所有未结束的停机。"""
+        req = self._read_json()
+        machine = (req.get("machine") or "").strip()
+        if not machine:
+            raise _Bad("请先选一台机台")
+        n = events.recover(machine)
+        self._json({"ok": True, "closed": n, "profile": _profile_payload()}, 200)
+
+    def _machine_undo(self):
+        """撤销一条登记错的事件。"""
+        req = self._read_json()
+        if not events.remove((req.get("id") or "").strip()):
+            raise _Bad("这条记录已经不存在了")
+        self._json({"ok": True, "profile": _profile_payload()}, 200)
 
     def _result(self, job_id):
         job = JOBS.get(job_id)
@@ -114,6 +182,17 @@ class Handler(BaseHTTPRequestHandler):
         if length > MAX_BYTES:
             raise _Bad("文件超过 12 MB，请确认是不是选错了文件")
         return self.rfile.read(length)
+
+    def _read_json(self):
+        """读 JSON 请求体（设备故障登记这类小表单用）。"""
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            return {}
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            raise _Bad("请求格式不对，刷新页面后再试一次")
+        return data if isinstance(data, dict) else {}
 
     def _json(self, obj, code):
         raw = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -170,12 +249,39 @@ def _check_file(filename, data):
         raise _Bad("没有收到文件名，请重新选择台账")
     if not filename.lower().endswith((".xlsx", ".xlsm")):
         raise _Bad(f"这个文件打不开，不是 Excel 台账。当前文件：{filename}。"
-                   "请上传 .xlsx 文件：订单 / 设备 / 工艺路线三张表，"
-                   "可以分在三个工作表，也可以在一个工作表里上下排三段。")
+                   "请上传 .xlsx 文件。日常排产只传订单表就行"
+                   "（设备与工艺路线用已保存的产线基线）；第一次使用要先传完整台账"
+                   "（订单 / 设备 / 工艺路线三张表，可分三个工作表，也可一个工作表上下排三段）。")
     if data[:2] != b"PK":
         raise _Bad("文件内容不像 Excel（可能已损坏或只是改了扩展名），请用 Excel 重新另存为 .xlsx")
     if len(data) < 1024:
         raise _Bad("文件太小，可能是空表，请检查台账内容")
+
+
+def _profile_payload():
+    """产线基线概况：机台、工艺、事件流水，给页面上的「产线」页签用。"""
+    base = profile.load()
+    if base is None:
+        return {"exists": False, "updated": "", "fingerprint": "", "summary": "",
+                "machines": [], "products": [], "events": []}
+    machines, _ = cleaner.clean_machines(base["设备"])
+    routes, _ = cleaner.clean_routes(base["工艺路线"])
+    clean = {"machines": machines, "routes": routes}
+    items = events.load()
+    live = events.ongoing(items)
+    updated = profile.mtime()
+    return {
+        "exists": True,
+        "updated": updated.strftime("%Y-%m-%d %H:%M") if updated else "",
+        "fingerprint": profile.fingerprint(clean),
+        "summary": profile.describe(clean),
+        "machines": [dict(m, down=m["code"] in live,
+                          down_until=(live[m["code"]].strftime("%m-%d %H:%M")
+                                      if live.get(m["code"]) else None))
+                     for m in profile.machines_of(clean)],
+        "products": profile.products_of(clean),
+        "events": [dict(e, active=e.get("machine") in live) for e in reversed(items[-30:])],
+    }
 
 
 def _parse_day(text):

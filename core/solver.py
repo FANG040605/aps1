@@ -25,8 +25,12 @@ FAR_FUTURE = date(2099, 12, 31)
 NO_DUE = "无交期"
 
 
-def schedule(tasks, machines, start_dt):
-    """先用多套规则各排一遍，再对最好的那个顺序做局部改进。"""
+def schedule(tasks, machines, start_dt, down=None):
+    """先用多套规则各排一遍，再对最好的那个顺序做局部改进。
+
+    down = {机台: [(起, 止), …]} 是故障/保养造成的停机区间，
+    排产时当成"这段时间已经被占住"，机器自然会绕开。
+    """
     jobs = _group(tasks)
     if not jobs:
         return {"rows": [], "makespan": start_dt, "rule": "无任务",
@@ -35,10 +39,10 @@ def schedule(tasks, machines, start_dt):
     best = None
     for rule in config.DISPATCH_RULES:
         order = _ordered(jobs, rule, start_dt)
-        cand = _evaluate(order, rule, jobs, machines, start_dt, due)
+        cand = _evaluate(order, rule, jobs, machines, start_dt, due, down)
         if best is None or cand["score"] < best["score"]:
             best = cand
-    return _improve(best, jobs, machines, start_dt, due)
+    return _improve(best, jobs, machines, start_dt, due, down)
 
 
 # ---------------- 评分 ----------------
@@ -66,25 +70,30 @@ def _due_dt(day):
 
 # ---------------- 单次排程 ----------------
 
-def _evaluate(order, rule, jobs, machines, start_dt, due):
-    rows = _run(order, jobs, machines, start_dt)
+def _evaluate(order, rule, jobs, machines, start_dt, due, down=None):
+    rows = _run(order, jobs, machines, start_dt, down)
     return {"rows": rows, "makespan": max((r["end"] for r in rows), default=start_dt),
             "rule": rule, "order": list(order),
             "score": _score(rows, due, start_dt), "evals": 1, "moves": 0}
 
 
-def _run(order, jobs, machines, start_dt):
-    """按给定订单顺序逐单排，每道工序取最早能结束的机台。"""
-    busy, rows = {}, []
+def _run(order, jobs, machines, start_dt, down=None):
+    """按给定订单顺序逐单排，每道工序取最早能结束的机台。
+
+    停机区间直接当成"机台已被占住"塞进档期，后面找空档的逻辑一个字不用改，
+    故障机台就会自动被绕开——这比再写一套"跳过维修期"的分支可靠得多。
+    """
+    busy = {mid: list(iv) for mid, iv in (down or {}).items()}
+    out = []
     for oid in order:
         ready = start_dt
         for task in jobs[oid]["tasks"]:
             t0 = max(ready, task["earliest"]) if task["earliest"] else ready
             start, end, mid = _pick(task, busy, machines, t0)
             busy.setdefault(mid, []).append((start, end))
-            rows.append(_row(task, mid, start, end))
+            out.append(_row(task, mid, start, end))
             ready = end
-    return rows
+    return out
 
 
 def _row(task, mid, start, end):
@@ -108,9 +117,14 @@ def _pick(task, busy, machines, t0):
 
 
 def _slot(intervals, t0, minutes, shifts):
-    """在已占用区间之外，找最早能放下 minutes 的空档。"""
+    """在已占用区间之外，找最早能放下 minutes 的空档。
+
+    intervals 里既有别人排的活，也有故障停机窗口——两者对"这台机什么时候能干活"
+    是一回事，所以一视同仁。每次冲突至少跳到冲突区间的末尾，最坏 len+1 次收敛，
+    这里留 64 次余量兜住停机窗口叠得比较碎的情况。
+    """
     cand = cal.ceil_to_work(t0, shifts)
-    for _ in range(len(intervals) + 16):
+    for _ in range(max(len(intervals) + 16, 64)):
         end = cal.add_work_minutes(cand, minutes, shifts)
         clash = next((iv for iv in intervals if cand < iv[1] and iv[0] < end), None)
         if clash is None:
@@ -183,7 +197,7 @@ def _atc_prefs(jobs, start_dt):
 
 # ---------------- 局部改进 ----------------
 
-def _improve(best, jobs, machines, start_dt, due):
+def _improve(best, jobs, machines, start_dt, due, down=None):
     """在订单顺序上做插入式局部搜索：挪一张单，评分变好就接受。
 
     只和当前最优比（first improvement），遍历顺序固定、评估次数有上限，
@@ -199,7 +213,7 @@ def _improve(best, jobs, machines, start_dt, due):
                 break
             cand_order = order[:]
             cand_order.insert(j, cand_order.pop(i))
-            cand = _evaluate(cand_order, best["rule"], jobs, machines, start_dt, due)
+            cand = _evaluate(cand_order, best["rule"], jobs, machines, start_dt, due, down)
             evals += 1
             if cand["score"] < cur["score"]:
                 cur, order, improved, moves = cand, cand_order, True, moves + 1

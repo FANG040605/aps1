@@ -36,21 +36,25 @@ class WorkbookError(Exception):
     """台账结构不对：缺表 / 找不到表头 / 表里没数据。提示可直接给客户看。"""
 
 
-def read_workbook(path):
+def read_workbook(path, required=TABLES):
     """读工作簿，返回 {表名: {"sheet", "header_row", "headers", "records"}}。
 
     三张表可以分在三个 sheet，也可以挤在一个 sheet 的上中下三段，
     结果结构完全一样，后面 cleaner 不用关心来源。
+
+    required 控制"哪几张表必须自己带"：日常排产只传订单表时
+    required=("订单",)，设备与工艺路线由调用方从产线基线补进来。
+    找到几张就返回几张，缺的由调用方决定是补还是报错。
     """
     wb = load_workbook(path, data_only=True)
     regions = {}
     for ws in wb.worksheets:
         for reg in _scan_sheet(ws):
             regions.setdefault(reg["table"], reg)     # 先出现的为准
-    missing = [t for t in TABLES if t not in regions]
+    missing = [t for t in required if t not in regions]
     if missing:
-        raise WorkbookError(_missing_msg(regions, missing))
-    return {t: _read_region(regions[t]) for t in TABLES}
+        raise WorkbookError(_missing_msg(regions, missing, required))
+    return {t: _read_region(regions[t]) for t in regions}
 
 
 def _scan_sheet(ws):
@@ -146,28 +150,40 @@ def _is_note(vals):
 
 def layout_note(data):
     """一句话说清每张表是从哪读来的，给"本次参数"行用。"""
+    names = [t for t in TABLES if t in data]
+    if not names:
+        return "空表"
     parts, same = [], True
-    first = data[TABLES[0]]["sheet"]
-    for name in TABLES:
+    first = data[names[0]]["sheet"]
+    for name in names:
         sheet = data[name]["sheet"]
         same = same and sheet == first
         parts.append(f"{name}@{sheet}")
     if same:
-        rows = "、".join(f'{name} 第 {data[name]["header_row"]} 行' for name in TABLES)
-        return f"一张表三种区域（{first}：{rows}）"
-    return "三张工作表（" + " / ".join(parts) + "）"
+        rows = "、".join(f'{name} 第 {data[name]["header_row"]} 行' for name in names)
+        return f"一张表{'三种区域' if len(names) == 3 else f'{len(names)} 段'}（{first}：{rows}）"
+    head = "三张工作表" if len(names) == 3 else f"{len(names)} 张工作表"
+    return head + "（" + " / ".join(parts) + "）"
 
 
-def _missing_msg(regions, missing):
-    """缺表的提示：告诉他工具认两种放法，以及表头该长什么样。"""
+def _missing_msg(regions, missing, required):
+    """缺表的提示：分两种情况说话，别让人按错的格式去返工。
+
+    - 只缺订单表 → 这次要排的是订单，提示他传订单表
+    - 缺设备/工艺路线 → 说明这两张表可以只配一次（存进产线基线）
+    """
     got = "、".join(f'{reg["table"]}（{reg["sheet"]} 第 {reg["header_row"]} 行）'
                    for reg in regions.values()) or "无"
     need = "、".join(f"「{t}」" for t in missing)
-    wants = "；".join(f'{t} = {" + ".join(HEADER_KEYS[t])}' for t in TABLES)
+    wants = "；".join(f'{t} = {" + ".join(HEADER_KEYS[t])}' for t in missing)
+    if list(required) == ["订单"]:
+        return (f"没在这个文件里找到「订单」的表头。已认出：{got}。\n"
+                f"订单表头至少要有：{wants}")
     return (f"没找到{need}的表头。已认出：{got}。\n"
             f"两种放法都行：① 三个工作表各放一张表；② 一个工作表里上下排三段，"
             f"每段第一行放该表的表头。\n"
-            f"表头至少要有：{wants}")
+            f"表头至少要有：{wants}\n"
+            f"如果设备与工艺路线一直没变，可以只传订单表——工具会用上次存下的产线基线。")
 
 
 def dump_columns(data, n=3):
