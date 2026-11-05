@@ -170,7 +170,8 @@ def _check_file(filename, data):
         raise _Bad("没有收到文件名，请重新选择台账")
     if not filename.lower().endswith((".xlsx", ".xlsm")):
         raise _Bad(f"这个文件打不开，不是 Excel 台账。当前文件：{filename}。"
-                   "请上传 .xlsx 文件，且要包含「订单」「设备」「工艺路线」三个工作表。")
+                   "请上传 .xlsx 文件：订单 / 设备 / 工艺路线三张表，"
+                   "可以分在三个工作表，也可以在一个工作表里上下排三段。")
     if data[:2] != b"PK":
         raise _Bad("文件内容不像 Excel（可能已损坏或只是改了扩展名），请用 Excel 重新另存为 .xlsx")
     if len(data) < 1024:

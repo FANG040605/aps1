@@ -1,7 +1,7 @@
 """排产助手核心模块。
 
 模块划分（N4 落地）：
-- reader   读三个 sheet
+- reader   读台账（三个 sheet，或一个 sheet 里的三段）
 - cleaner  洗脏数据 + 体检记录
 - instance 订单 → 工序任务
 - solver   多规则排程 + 交期驱动的局部改进 + 交期可行性下界

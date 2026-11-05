@@ -141,7 +141,7 @@
   <!-- ① 上传 -->
   <div class="card">
     <div class="tag">1</div>
-    <h2>上传订单台账 <em>一个 .xlsx 文件，含「订单 / 设备 / 工艺路线」三个 sheet</em></h2>
+    <h2>上传订单台账 <em>一个 .xlsx 文件，订单 / 设备 / 工艺路线三张表：分三个 sheet，或一个 sheet 里上下排三段</em></h2>
     <div class="drop" id="drop">
       <div class="ico">↑</div>
       <b>把台账拖到这里，或点击选择文件</b>
@@ -234,7 +234,7 @@ function pick(f){
   if(!f) return;
   if(!/\.(xlsx|xlsm)$/i.test(f.name)){
     showError("这个文件打不开，不是 Excel 台账",
-      `当前文件：${f.name}。请上传 .xlsx 文件，且要包含「订单」「设备」「工艺路线」三个工作表。`);
+      `当前文件：${f.name}。请上传 .xlsx 文件：订单 / 设备 / 工艺路线三张表，可以分三个 sheet，也可以放在一个 sheet 里上下排三段。`);
     return;
   }
   state.file = f;
@@ -437,7 +437,7 @@ function checkOrigin(){
   if(checkOrigin()) return;
   if(location.hash === "#demo-error"){
     showError("这个文件打不开，不是 Excel 台账",
-      "当前文件：排产说明.txt。请上传 .xlsx 文件，且要包含「订单」「设备」「工艺路线」三个工作表。");
+      "当前文件：排产说明.txt。请上传 .xlsx 文件：订单 / 设备 / 工艺路线三张表，可以分三个 sheet，也可以放在一个 sheet 里上下排三段。");
     $("#statusNote").textContent = "选错文件了，重新选一个";
     return;
   }

@@ -59,14 +59,15 @@ def _as_date(value):
     return value
 
 
-def build_params(start_dt, allow_switch, machines):
+def build_params(start_dt, allow_switch, machines, layout=""):
     """把本次真正生效的口径拼成一行，打印并写进每份产物。"""
     shifts = "、".join(f"{s} 班" for s in sorted({m["shifts"] for m in machines.values()}))
     down = "、".join(m["code"] for m in machines.values()
                      if not m["usable"] and "外协" not in m["status"]) or "无"
     out = "、".join(m["code"] for m in machines.values() if "外协" in m["status"]) or "无"
     idle = "、".join(m["code"] for m in machines.values() if "闲置" in m["status"]) or "无"
-    return (f'起始 {cal.fmt_full(start_dt)} ｜ 每班 {config.HOURS_PER_SHIFT}h，班制 {shifts}'
+    from_where = f'读取 {layout} ｜ ' if layout else ""
+    return (f'{from_where}起始 {cal.fmt_full(start_dt)} ｜ 每班 {config.HOURS_PER_SHIFT}h，班制 {shifts}'
             f' ｜ 周日不排 ｜ 交期当天 {config.DUE_HOUR}:00 ｜ 工时 {config.TIME_UNIT}×数量'
             f' ｜ 目标 迟到单数→迟到天数→总完工'
             f' ｜ 换机台 {"允许" if allow_switch else "不允许"} ｜ 数量空白 不排产'
@@ -93,7 +94,7 @@ def run_pipeline(xlsx_path, out_dir, start=None, allow_switch=True, now=None):
     violations = checker.check(tasks, result["rows"], machines, start_dt,
                                orders=clean["orders"], skipped=skipped)
     bounds = solver.lower_bounds(tasks, machines, start_dt)
-    params = build_params(start_dt, allow_switch, machines)
+    params = build_params(start_dt, allow_switch, machines, reader.layout_note(data))
     risks = report.build_risks(clean["orders"], result["rows"], skipped, bounds)
     paths = _write(out_dir, result, risks, issues, params, start_dt, len(clean["orders"]))
     return {"rows": result["rows"], "tasks": tasks, "skipped": skipped, "issues": issues,

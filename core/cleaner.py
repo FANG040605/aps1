@@ -46,6 +46,21 @@ def _loc(sheet, headers, head, row):
     return f"{sheet}!{_col_name(col)}{row}"
 
 
+def _place(rec, headers, head, default):
+    """单元格位置：写真实工作表名，客户照着才找得到。
+
+    三张表分在三个 sheet 时它就是「订单」「工艺路线」；
+    三段挤在一张表里时它是「台账」，行号已经是表内的绝对行号，
+    写「订单!D4」客户在那张表里根本找不到 D4。
+    """
+    return _loc(rec.get("__sheet__") or default, headers, head, rec["__row__"])
+
+
+def _place_row(rec, default):
+    """整行的位置（设备表按行登记，不需要列号）。"""
+    return f"{rec.get('__sheet__') or default}!{rec['__row__']}"
+
+
 
 def _issue(issues, category, where, symptom, action, need_confirm=False):
     issues.append({"category": category, "where": where, "symptom": symptom,
@@ -186,22 +201,22 @@ def _order_issues(rec, oid, base, dup, norm, headers, issues):
     row = rec["__row__"]
     oid_raw = _txt(rec.get("单号"))
     if base in dup:
-        _issue(issues, "单号重复", _loc("订单", headers, "单号", row),
+        _issue(issues, "单号重复", _place(rec, headers, "单号", "订单"),
                f"「{oid_raw}」同号共 {norm.count(base)} 条", f"拆分为 {oid}，按独立订单排产")
     elif oid != oid_raw:
-        _issue(issues, "单号格式", _loc("订单", headers, "单号", row),
+        _issue(issues, "单号格式", _place(rec, headers, "单号", "订单"),
                f"原文「{oid_raw}」", f"统一为 {oid}")
     _recv_issue(rec, headers, issues)
     _due_issue(rec, headers, issues)
     if _parse_qty(rec.get("数量")) is None:
-        _issue(issues, "数量缺失", _loc("订单", headers, "数量", row),
+        _issue(issues, "数量缺失", _place(rec, headers, "数量", "订单"),
                f"数量为空（备注：{_txt(rec.get('备注'))}）", "不排产，标需客户确认", True)
 
 
 def _recv_issue(rec, headers, issues):
     """接单日期：空白、无法解析、非标准格式，三种都留痕。"""
     raw = _txt(rec.get("接单日期"))
-    loc = _loc("订单", headers, "接单日期", rec["__row__"])
+    loc = _place(rec, headers, "接单日期", "订单")
     parsed = parse_date(raw)
     if not raw:
         _issue(issues, "接单日期", loc, "接单日期为空", "标需客户确认，交期按原文处理", True)
@@ -216,7 +231,7 @@ def _due_issue(rec, headers, issues):
     raw = _txt(rec.get("交期"))
     recv = parse_date(rec.get("接单日期"))
     due, text, need = parse_due(raw, recv)
-    loc = _loc("订单", headers, "交期", rec["__row__"])
+    loc = _place(rec, headers, "交期", "订单")
     if not raw:
         _issue(issues, "交期口径", loc, "交期为空", "按无交期处理，风险清单标需客户确认", True)
     elif text:
@@ -245,7 +260,7 @@ def _parse_qty(value):
 def _order_dict(rec, oid, recv, due, qty, issues, headers):
     """把一条订单整理成标准结构，顺带识别备注里的口头规则。"""
     remark = _txt(rec.get("备注"))
-    loc = _loc("订单", headers, "备注", rec["__row__"])
+    loc = _place(rec, headers, "备注", "订单")
     urgent = any(k in remark for k in config.RULE_KEYWORDS["urgent"])
     if urgent:
         _issue(issues, "备注规则", loc, f"备注「{remark}」", "识别为急单，排产时优先")
@@ -296,12 +311,12 @@ def clean_machines(sheet):
         ops = [x.strip() for x in re.split(r"[、,，/]", _txt(rec.get("可做工序"))) if x.strip()]
         shifts = _parse_shifts(_txt(rec.get("每日班次")))
         if not code:
-            _issue(issues, "设备编号缺失", f"设备!{rec['__row__']}",
+            _issue(issues, "设备编号缺失", _place_row(rec, "设备"),
                    f"设备号「{dev_no}」为空", "无法识别机台，剔除")
             continue
         usable = _judge_status(issues, rec, code, status)
         if shifts != config.DEFAULT_SHIFTS_PER_DAY:
-            _issue(issues, "班次差异", f"设备!{rec['__row__']}", f"{code} 为 {shifts} 班",
+            _issue(issues, "班次差异", _place_row(rec, "设备"), f"{code} 为 {shifts} 班",
                    f"按 {shifts * config.HOURS_PER_SHIFT}h/天 计算产能")
         machines.append({"code": code, "dev_no": dev_no, "status": status, "ops": ops,
                          "shifts": shifts, "usable": usable, "row": rec["__row__"]})
@@ -310,7 +325,7 @@ def clean_machines(sheet):
 
 def _judge_status(issues, rec, code, status):
     """外协 / 停机 / 闲置三种状态各记一条，别混成一句话。"""
-    loc = f"设备!{rec['__row__']}"
+    loc = _place_row(rec, "设备")
     if any(k in status for k in ("外协",)):
         _issue(issues, "外协剔除", loc, f"{code} 状态「{status}」", "不计本厂产能，不进可用池")
         return False
@@ -354,7 +369,7 @@ def _steps_of(rec, headers, issues):
             continue
         step = parse_op(cell)
         if step is None:
-            _issue(issues, "工时解析", _loc("工艺路线", headers, f"工序{i}", rec["__row__"]),
+            _issue(issues, "工时解析", _place(rec, headers, f"工序{i}", "工艺路线"),
                    f"「{cell}」无法解析", "跳过该工序，需人工核对", True)
             continue
         steps.append(step)
@@ -365,12 +380,12 @@ def _route_issues(rec, product, total, headers, issues):
     """合计对不上 / 备注有口头规则，各记一条。"""
     declared = _parse_float(rec.get("单件工时合计"))
     if declared is not None and abs(declared - total) > 0.01:
-        _issue(issues, "工时合计校验", _loc("工艺路线", headers, "单件工时合计", rec["__row__"]),
+        _issue(issues, "工时合计校验", _place(rec, headers, "单件工时合计", "工艺路线"),
                f"{product} 合计 {declared} vs 逐道累加 {total}", "以逐道累加为准，提示核对", True)
     remark = _txt(rec.get("备注"))
     if remark:
         need = ("瓶颈" in remark) or ("别排太散" in remark)
-        _issue(issues, "工艺备注", _loc("工艺路线", headers, "备注", rec["__row__"]),
+        _issue(issues, "工艺备注", _place(rec, headers, "备注", "工艺路线"),
                f"{product}：{remark}",
                "转人工确认口径" if need else "记录备查（机台指定已并入机台解析）", need)
 
